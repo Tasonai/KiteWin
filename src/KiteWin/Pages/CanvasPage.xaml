@@ -28,26 +28,26 @@
                 <!-- Left actions: Add Elements -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
                     <Button x:Name="AddIdeaBtn" Click="OnAddIdeaClicked">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE710;" FontSize="12" />
                             <TextBlock Text="Идея" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="AddStickyBtn" Click="OnAddStickyClicked">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE8A5;" FontSize="12" />
                             <TextBlock Text="Стикер" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="AddFrameBtn" Click="OnAddFrameClicked">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE746;" FontSize="12" />
                             <TextBlock Text="Фрейм" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <AppBarSeparator />
                     <Button x:Name="SyncCanvasBtn" Click="OnSyncCanvasClicked">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE895;" FontSize="12" />
                             <TextBlock Text="Синхронизировать с Mac" VerticalAlignment="Center" />
                         </StackPanel>

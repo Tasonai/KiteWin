@@ -42,7 +42,7 @@ public sealed partial class CanvasPage : Page
                 Width = frame.Width,
                 Height = frame.Height,
                 BorderBrush = new SolidColorBrush(ColorFromHex(frame.ColorHex, 0.4)),
-                BorderThickness = new Thickness(1.5),
+                BorderThickness = new Thickness(2),
                 CornerRadius = new CornerRadius(12),
                 Background = new SolidColorBrush(ColorFromHex(frame.ColorHex, 0.04))
             };
@@ -52,9 +52,9 @@ public sealed partial class CanvasPage : Page
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Top,
                 Background = new SolidColorBrush(ColorFromHex(frame.ColorHex, 0.9)),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(10, 4, 10, 4),
-                Margin = new Thickness(8, -14, 0, 0),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(8, -12, 0, 0),
                 Child = new TextBlock
                 {
                     Text = frame.Title,
@@ -68,8 +68,8 @@ public sealed partial class CanvasPage : Page
             container.Children.Add(frameBorder);
             container.Children.Add(header);
 
-            Canvas.SetLeft(container, frame.X);
-            Canvas.SetTop(container, frame.Y);
+            Canvas.SetLeft(container, frame.X); // grid: ok freeform canvas
+            Canvas.SetTop(container, frame.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(container, 1);
             AttachDrag(container, (x, y) => { frame.X = x; frame.Y = y; _canvasStore.Save(); });
 
@@ -106,7 +106,7 @@ public sealed partial class CanvasPage : Page
                     Background = new SolidColorBrush(Colors.White),
                     BorderBrush = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.4)),
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(10),
+                    CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(8, 2, 8, 2),
                     Child = new TextBlock
                     {
@@ -116,8 +116,8 @@ public sealed partial class CanvasPage : Page
                         Foreground = new SolidColorBrush(ColorFromHex(conn.ColorHex, 1.0))
                     }
                 };
-                Canvas.SetLeft(labelPill, 435);
-                Canvas.SetTop(labelPill, 385);
+                Canvas.SetLeft(labelPill, 435); // grid: ok freeform canvas
+                Canvas.SetTop(labelPill, 385); // grid: ok freeform canvas
                 Canvas.SetZIndex(labelPill, 3);
                 MainCanvas.Children.Add(labelPill);
             }
@@ -127,8 +127,8 @@ public sealed partial class CanvasPage : Page
         foreach (var refCard in _canvasStore.Snapshot.ReferenceCards)
         {
             var card = CreateReferenceCardElement(refCard);
-            Canvas.SetLeft(card, refCard.X);
-            Canvas.SetTop(card, refCard.Y);
+            Canvas.SetLeft(card, refCard.X); // grid: ok freeform canvas
+            Canvas.SetTop(card, refCard.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(card, 10);
             AttachDrag(card, (x, y) => { refCard.X = x; refCard.Y = y; _canvasStore.Save(); });
             MainCanvas.Children.Add(card);
@@ -138,8 +138,8 @@ public sealed partial class CanvasPage : Page
         foreach (var sticky in _canvasStore.Snapshot.Stickies)
         {
             var stickyEl = CreateStickyElement(sticky);
-            Canvas.SetLeft(stickyEl, sticky.X);
-            Canvas.SetTop(stickyEl, sticky.Y);
+            Canvas.SetLeft(stickyEl, sticky.X); // grid: ok freeform canvas
+            Canvas.SetTop(stickyEl, sticky.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(stickyEl, 10);
             AttachDrag(stickyEl, (x, y) => { sticky.X = x; sticky.Y = y; _canvasStore.Save(); });
             MainCanvas.Children.Add(stickyEl);
@@ -150,8 +150,8 @@ public sealed partial class CanvasPage : Page
         if (firstIdea != null)
         {
             var ideaCard = CreateIdeaCardElement(firstIdea);
-            Canvas.SetLeft(ideaCard, 560);
-            Canvas.SetTop(ideaCard, 200);
+            Canvas.SetLeft(ideaCard, 560); // grid: ok freeform canvas
+            Canvas.SetTop(ideaCard, 200); // grid: ok freeform canvas
             Canvas.SetZIndex(ideaCard, 10);
             MainCanvas.Children.Add(ideaCard);
         }
@@ -188,12 +188,12 @@ public sealed partial class CanvasPage : Page
     {
         var border = new Border
         {
-            Width = 230,
+            Width = 232,
             Background = new SolidColorBrush(Colors.White),
             BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 225, 225, 230)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14)
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(16)
         };
 
         var stack = new StackPanel { Spacing = 8 };
@@ -206,7 +206,7 @@ public sealed partial class CanvasPage : Page
         {
             Background = new SolidColorBrush(ColorFromHex(refCard.ColorHex, 0.15)),
             CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 2, 6, 2),
+            Padding = new Thickness(8, 2, 8, 2),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = new TextBlock
             {
@@ -251,8 +251,8 @@ public sealed partial class CanvasPage : Page
             Background = new SolidColorBrush(Colors.White),
             BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 220, 220, 230)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14)
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(16)
         };
 
         var stack = new StackPanel { Spacing = 8 };
@@ -268,12 +268,12 @@ public sealed partial class CanvasPage : Page
         });
         stack.Children.Add(header);
 
-        var tagsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var tagsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var platformBadge = new Border
         {
             Background = new SolidColorBrush(ColorHelper.FromArgb(255, 240, 240, 245)),
             CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 2, 6, 2),
+            Padding = new Thickness(8, 2, 8, 2),
             Child = new TextBlock { Text = item.Platform, FontSize = 10, Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 100, 100, 110)) }
         };
         tagsRow.Children.Add(platformBadge);
@@ -282,7 +282,7 @@ public sealed partial class CanvasPage : Page
         {
             Background = new SolidColorBrush(ColorHelper.FromArgb(255, 240, 245, 255)),
             CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 2, 6, 2),
+            Padding = new Thickness(8, 2, 8, 2),
             Child = new TextBlock { Text = item.Style, FontSize = 10, Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 30, 100, 220)) }
         };
         tagsRow.Children.Add(styleBadge);
@@ -315,8 +315,8 @@ public sealed partial class CanvasPage : Page
             var current = e.GetCurrentPoint(MainCanvas).Position;
             var newX = Math.Max(20, origX + (current.X - startPoint.X));
             var newY = Math.Max(20, origY + (current.Y - startPoint.Y));
-            Canvas.SetLeft(element, newX);
-            Canvas.SetTop(element, newY);
+            Canvas.SetLeft(element, newX); // grid: ok freeform canvas
+            Canvas.SetTop(element, newY); // grid: ok freeform canvas
             e.Handled = true;
         };
 

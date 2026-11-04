@@ -80,7 +80,7 @@
 
                         <TextBox
                             x:Name="InputConceptBox"
-                            MinHeight="130"
+                            MinHeight="128"
                             AcceptsReturn="True"
                             Header="Ваша идея или сценарий"
                             PlaceholderText="Опишите экран, логику, фильтры, API и целевую аудиторию..."
@@ -132,22 +132,22 @@
                         <!-- Active Antigravity Skills -->
                         <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Активные скиллы Antigravity" />
                         <WrapPanel Orientation="Horizontal">
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/enhance-prompt" />
                             </Border>
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/design-md" />
                             </Border>
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/taste-design" />
                             </Border>
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/emil-design-eng" />
                             </Border>
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/a11y-debugging" />
                             </Border>
-                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
                                 <TextBlock FontSize="11" Text="/subagent-driven-development" />
                             </Border>
                         </WrapPanel>
@@ -183,7 +183,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Spacing="4">
                             <TextBlock FontWeight="SemiBold" Text="Индекс инженерной плотности" />
-                            <ProgressBar x:Name="QualityBar" Height="6" Maximum="100" Value="85" />
+                            <ProgressBar x:Name="QualityBar" Height="8" Maximum="100" Value="85" />
                         </StackPanel>
                         <TextBlock
                             x:Name="QualityText"

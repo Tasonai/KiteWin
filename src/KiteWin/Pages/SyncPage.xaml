@@ -55,7 +55,7 @@
                                 Grid.Column="1"
                                 VerticalAlignment="Bottom"
                                 Click="OnTestConnectionClick">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
                                     <FontIcon Glyph="&#xE774;" FontSize="14" />
                                     <TextBlock Text="Проверить связь" />
                                 </StackPanel>
@@ -95,7 +95,7 @@
                                     IsEnabled="{x:Bind Model.IsSyncing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}, FallbackValue=True}"
                                     Style="{StaticResource AccentButtonStyle}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <ProgressRing x:Name="SyncProgress" Width="14" Height="14" IsActive="{x:Bind Model.IsSyncing, Mode=OneWay}" />
+                                        <ProgressRing x:Name="SyncProgress" Width="16" Height="16" IsActive="{x:Bind Model.IsSyncing, Mode=OneWay}" />
                                         <FontIcon Glyph="&#xE895;" FontSize="14" Visibility="{x:Bind Model.IsSyncing, Mode=OneWay, Converter={StaticResource InverseVisibilityConverter}}" />
                                         <TextBlock Text="Синхронизировать сейчас" />
                                     </StackPanel>

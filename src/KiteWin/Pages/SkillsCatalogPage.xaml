@@ -36,7 +36,7 @@
         </Grid>
 
         <!-- Search and Filter Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,14" ColumnSpacing="{StaticResource SpaceMd}">
+        <Grid Grid.Row="1" Margin="0,0,0,16" ColumnSpacing="{StaticResource SpaceMd}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -47,7 +47,7 @@
                 PlaceholderText="Поиск по скиллам (/emil-design-eng), плагинам, тегам и описанию..."
                 TextChanged="OnSearchTextChanged">
                 <TextBox.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE721;" FontSize="12" />
                         <TextBlock Text="Быстрый поиск" />
                     </StackPanel>
@@ -97,7 +97,7 @@
                         SelectionMode="Single">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="core:AntigravitySkillInfo">
-                                <Grid Margin="0,4" RowSpacing="3">
+                                <Grid Margin="0,4" RowSpacing="4">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
@@ -113,7 +113,7 @@
                                         Grid.Column="1"
                                         Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                         CornerRadius="4"
-                                        Padding="5,1">
+                                        Padding="8,2">
                                         <TextBlock
                                             FontSize="10"
                                             FontWeight="SemiBold"
@@ -144,7 +144,7 @@
                         Visibility="Collapsed">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="core:AntigravityPluginInfo">
-                                <Grid Margin="0,4" RowSpacing="3">
+                                <Grid Margin="0,4" RowSpacing="4">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
@@ -160,7 +160,7 @@
                                         Grid.Column="1"
                                         Background="{ThemeResource AccentFillColorDefaultBrush}"
                                         CornerRadius="4"
-                                        Padding="5,1">
+                                        Padding="8,2">
                                         <TextBlock
                                             FontSize="10"
                                             FontWeight="SemiBold"
@@ -229,7 +229,7 @@
                                 Grid.Column="1"
                                 VerticalAlignment="Top"
                                 Click="OnCopySkillCommandClick">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
                                     <FontIcon Glyph="&#xE8C8;" FontSize="13" />
                                     <TextBlock Text="Копировать вызов" />
                                 </StackPanel>
@@ -237,8 +237,8 @@
                         </Grid>
 
                         <!-- Summary Card -->
-                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="14">
-                            <StackPanel Spacing="6">
+                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="8">
                                 <TextBlock FontWeight="SemiBold" Text="Обзор и назначение" />
                                 <TextBlock
                                     x:Name="DetailSkillSummary"
@@ -249,9 +249,9 @@
                         </Border>
 
                         <!-- When To Use Callout -->
-                        <Border Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}" CornerRadius="8" Padding="14">
-                            <StackPanel Spacing="6">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}" CornerRadius="8" Padding="16">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
                                     <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
                                     <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCautionBrush}" Text="Когда применять" />
                                 </StackPanel>
@@ -264,7 +264,7 @@
                         </Border>
 
                         <!-- Detailed Description -->
-                        <StackPanel Spacing="6">
+                        <StackPanel Spacing="8">
                             <TextBlock FontWeight="SemiBold" FontSize="15" Text="Архитектура и рабочий процесс" />
                             <TextBlock
                                 x:Name="DetailSkillDescription"
@@ -275,12 +275,12 @@
                         </StackPanel>
 
                         <!-- Capabilities -->
-                        <StackPanel x:Name="CapabilitiesSection" Spacing="6">
+                        <StackPanel x:Name="CapabilitiesSection" Spacing="8">
                             <TextBlock FontWeight="SemiBold" FontSize="14" Text="Ключевые возможности" />
                             <ItemsControl x:Name="CapabilitiesList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,3" Orientation="Horizontal" Spacing="8">
+                                        <StackPanel Margin="0,4" Orientation="Horizontal" Spacing="8">
                                             <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                             <TextBlock FontSize="13" Text="{Binding}" TextWrapping="Wrap" />
                                         </StackPanel>
@@ -290,7 +290,7 @@
                         </StackPanel>
 
                         <!-- Example Prompt Box -->
-                        <StackPanel Spacing="6">
+                        <StackPanel Spacing="8">
                             <Grid>
                                 <TextBlock FontWeight="SemiBold" FontSize="14" Text="Пример готового промпта" />
                                 <Button
@@ -315,12 +315,12 @@
                         </StackPanel>
 
                         <!-- Principles -->
-                        <StackPanel x:Name="PrinciplesSection" Spacing="6">
+                        <StackPanel x:Name="PrinciplesSection" Spacing="8">
                             <TextBlock FontWeight="SemiBold" FontSize="14" Text="Инженерные принципы крафта" />
                             <ItemsControl x:Name="PrinciplesList">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,3" Orientation="Horizontal" Spacing="8">
+                                        <StackPanel Margin="0,4" Orientation="Horizontal" Spacing="8">
                                             <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
                                             <TextBlock FontSize="13" Text="{Binding}" TextWrapping="Wrap" />
                                         </StackPanel>
@@ -330,7 +330,7 @@
                         </StackPanel>
 
                         <!-- Triggers -->
-                        <StackPanel x:Name="TriggersSection" Spacing="6">
+                        <StackPanel x:Name="TriggersSection" Spacing="8">
                             <TextBlock FontWeight="SemiBold" FontSize="14" Text="Триггеры вызова" />
                             <ItemsControl x:Name="TriggersList">
                                 <ItemsControl.ItemsPanel>
@@ -340,7 +340,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,3">
+                                        <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                             <TextBlock FontFamily="Cascadia Code, Consolas" FontSize="11" Text="{Binding}" />
                                         </Border>
                                     </DataTemplate>

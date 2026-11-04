@@ -97,7 +97,7 @@
                         </ListView.KeyboardAccelerators>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="core:Item">
-                                <Grid Padding="8,6" ColumnSpacing="{StaticResource SpaceMd}">
+                                <Grid Padding="8,8" ColumnSpacing="{StaticResource SpaceMd}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
@@ -270,7 +270,7 @@
 
                             <!-- Concept & JTBD Input -->
                             <TextBox
-                                MinHeight="110"
+                                MinHeight="112"
                                 AcceptsReturn="True"
                                 Header="Концепция и сценарий (JTBD)"
                                 PlaceholderText="Опишите ключевой пользовательский сценарий и требования..."
@@ -284,7 +284,7 @@
                                     Click="OnGenerateAiSpec"
                                     Style="{StaticResource AccentButtonStyle}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <ProgressRing x:Name="AiProgressRing" Width="14" Height="14" IsActive="False" Visibility="Collapsed" />
+                                        <ProgressRing x:Name="AiProgressRing" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
                                         <FontIcon x:Name="AiIcon" Glyph="&#xE945;" FontSize="14" />
                                         <TextBlock x:Name="AiBtnText" Text="Сгенерировать AI-спецификацию" />
                                     </StackPanel>
