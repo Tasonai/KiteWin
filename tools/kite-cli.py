@@ -247,7 +247,7 @@ def run_mcp_server() -> None:
                                         "concept": {"type": "string", "description": "JTBD scenario and requirements"},
                                         "platform": {"type": "string", "enum": ["web", "mobile", "desktop"], "default": "web"},
                                         "style": {"type": "string", "description": "Design system preset", "default": "Editorial & Swiss Modern"},
-                                        "starred": {"type": "boolean", "default": false}
+                                        "starred": {"type": "boolean", "default": False}
                                     },
                                     "required": ["title"]
                                 }
