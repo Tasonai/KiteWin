@@ -8,12 +8,12 @@
     NavigationCacheMode="Required">
 
     <Page.Resources>
-        <Style x:Key="SkillCardStyle" TargetType="Border">
+        <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
-            <Setter Property="Padding" Value="16" />
+            <Setter Property="Padding" Value="14" />
         </Style>
     </Page.Resources>
 
@@ -31,12 +31,12 @@
         <Grid Margin="{StaticResource PageHeaderMargin}">
             <StackPanel Spacing="2">
                 <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="База знаний Antigravity" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="355 специализированных скиллов и 18 расширений экосистемы для генерации и синхронизации." />
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="355 специализированных навыков и 18 официальных расширений с подробными спецификациями." />
             </StackPanel>
         </Grid>
 
         <!-- Search and Filter Bar -->
-        <Grid Grid.Row="1" Margin="0,0,0,16" ColumnSpacing="{StaticResource SpaceMd}">
+        <Grid Grid.Row="1" Margin="0,0,0,14" ColumnSpacing="{StaticResource SpaceMd}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -44,7 +44,7 @@
 
             <TextBox
                 x:Name="SearchBox"
-                PlaceholderText="Поиск по скиллам, плагинам, тегам и описанию..."
+                PlaceholderText="Поиск по скиллам (@emil-design-eng), плагинам, тегам и описанию..."
                 TextChanged="OnSearchTextChanged">
                 <TextBox.Header>
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -57,153 +57,299 @@
             <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Orientation="Horizontal" Spacing="{StaticResource SpaceSm}">
                 <RadioButton
                     x:Name="SkillsRadio"
-                    Content="Скиллы"
+                    Content="Скиллы (355)"
                     IsChecked="True"
                     Checked="OnCategoryTabChanged" />
                 <RadioButton
                     x:Name="PluginsRadio"
-                    Content="Плагины"
+                    Content="Плагины (18)"
                     Checked="OnCategoryTabChanged" />
             </StackPanel>
         </Grid>
 
-        <!-- Content Area -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="{StaticResource SpaceMd}">
-                <!-- Skills Grid View -->
-                <ItemsControl x:Name="SkillsList">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" ItemWidth="340" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="core:AntigravitySkillInfo">
-                            <Border Margin="0,0,12,12" Style="{StaticResource SkillCardStyle}">
-                                <Grid RowSpacing="8">
+        <!-- Master-Detail Content Area -->
+        <Grid Grid.Row="2" ColumnSpacing="{StaticResource SpaceLg}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="380" MinWidth="300" MaxWidth="500" />
+                <ColumnDefinition Width="*" MinWidth="420" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Master List Column -->
+            <Border Style="{StaticResource CardStyle}" Padding="0">
+                <Grid RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <ComboBox
+                        x:Name="CategoryFilterBox"
+                        Margin="12,12,12,4"
+                        HorizontalAlignment="Stretch"
+                        Header="Категория"
+                        SelectionChanged="OnCategoryFilterChanged" />
+
+                    <!-- Skills List -->
+                    <ListView
+                        x:Name="SkillsListView"
+                        Grid.Row="1"
+                        SelectionChanged="OnSkillSelectionChanged"
+                        SelectionMode="Single">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="core:AntigravitySkillInfo">
+                                <Grid Margin="0,4" RowSpacing="3">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="*" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
 
-                                    <!-- Top Badges -->
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
+                                    <TextBlock FontWeight="SemiBold" FontSize="13" Text="{x:Bind Name}" />
 
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
-                                                <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind Category}" />
-                                            </Border>
-                                        </StackPanel>
-
-                                        <Button
-                                            Grid.Column="1"
-                                            Padding="4"
-                                            Click="OnCopySkillNameClick"
-                                            Tag="{x:Bind Name}"
-                                            ToolTipService.ToolTip="Скопировать вызов скилла">
-                                            <FontIcon Glyph="&#xE8C8;" FontSize="12" />
-                                        </Button>
-                                    </Grid>
-
-                                    <!-- Name and Summary -->
-                                    <StackPanel Grid.Row="1" Spacing="4">
-                                        <TextBlock FontSize="15" FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                    <Border
+                                        Grid.Column="1"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="4"
+                                        Padding="5,1">
                                         <TextBlock
-                                            FontSize="12"
-                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            MaxLines="2"
-                                            Text="{x:Bind Summary}"
-                                            TextWrapping="Wrap" />
-                                    </StackPanel>
-
-                                    <!-- Footer info -->
-                                    <TextBlock
-                                        Grid.Row="2"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                        Text="{x:Bind Description}"
-                                        TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <!-- Plugins Grid View -->
-                <ItemsControl x:Name="PluginsList" Visibility="Collapsed">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="3" ItemWidth="340" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="core:AntigravityPluginInfo">
-                            <Border Margin="0,0,12,12" Style="{StaticResource SkillCardStyle}">
-                                <Grid RowSpacing="8">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-
-                                    <!-- Top Badges -->
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Border Background="{ThemeResource AccentFillColorDefaultBrush}" CornerRadius="4" Padding="6,2">
-                                                <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" Text="{x:Bind Version}" />
-                                            </Border>
-                                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
-                                                <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Category}" />
-                                            </Border>
-                                        </StackPanel>
-
-                                        <Button
-                                            Grid.Column="1"
-                                            Padding="4"
-                                            Click="OnCopyPluginIdClick"
-                                            Tag="{x:Bind Id}"
-                                            ToolTipService.ToolTip="Скопировать ID плагина">
-                                            <FontIcon Glyph="&#xE8C8;" FontSize="12" />
-                                        </Button>
-                                    </Grid>
-
-                                    <!-- Name and Summary -->
-                                    <StackPanel Grid.Row="1" Spacing="4">
-                                        <TextBlock FontSize="15" FontWeight="SemiBold" Text="{x:Bind Name}" />
-                                        <TextBlock
-                                            FontSize="12"
-                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            MaxLines="3"
-                                            Text="{x:Bind Summary}"
-                                            TextWrapping="Wrap" />
-                                    </StackPanel>
-
-                                    <!-- Author and Skills Count -->
-                                    <Grid Grid.Row="2">
-                                        <TextBlock FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="{x:Bind Author}" />
-                                        <TextBlock
-                                            HorizontalAlignment="Right"
-                                            FontSize="11"
+                                            FontSize="10"
                                             FontWeight="SemiBold"
                                             Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                            Text="{x:Bind SkillsCount, ConverterParameter='скиллов', Mode=OneWay}" />
-                                    </Grid>
+                                            Text="{x:Bind Category}" />
+                                    </Border>
+
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
+                                        FontSize="11"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        MaxLines="2"
+                                        Text="{x:Bind Summary}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap" />
                                 </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Plugins List -->
+                    <ListView
+                        x:Name="PluginsListView"
+                        Grid.Row="1"
+                        SelectionChanged="OnPluginSelectionChanged"
+                        SelectionMode="Single"
+                        Visibility="Collapsed">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="core:AntigravityPluginInfo">
+                                <Grid Margin="0,4" RowSpacing="3">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock FontWeight="SemiBold" FontSize="13" Text="{x:Bind Name}" />
+
+                                    <Border
+                                        Grid.Column="1"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        CornerRadius="4"
+                                        Padding="5,1">
+                                        <TextBlock
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                            Text="{x:Bind Version}" />
+                                    </Border>
+
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="2"
+                                        FontSize="11"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        MaxLines="2"
+                                        Text="{x:Bind Summary}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <!-- Detail Column -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <!-- Skill Detail View -->
+                    <StackPanel x:Name="SkillDetailPanel" Spacing="{StaticResource SpaceLg}">
+                        <!-- Top Header -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock
+                                    x:Name="DetailSkillName"
+                                    FontSize="22"
+                                    FontWeight="Bold"
+                                    Text="emil-design-eng" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock
+                                        x:Name="DetailSkillCommand"
+                                        FontFamily="Cascadia Code, Consolas"
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                        Text="@emil-design-eng" />
+                                    <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="•" />
+                                    <TextBlock
+                                        x:Name="DetailSkillCategory"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="UI/UX, Анимации и Полишинг" />
+                                    <TextBlock x:Name="DetailPluginBullet" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="•" />
+                                    <TextBlock
+                                        x:Name="DetailSkillPlugin"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="stitch-utilities" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Button
+                                Grid.Column="1"
+                                VerticalAlignment="Top"
+                                Click="OnCopySkillCommandClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                                    <TextBlock Text="Копировать вызов" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <!-- Summary Card -->
+                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="6">
+                                <TextBlock FontWeight="SemiBold" Text="Обзор и назначение" />
+                                <TextBlock
+                                    x:Name="DetailSkillSummary"
+                                    FontSize="13"
+                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- When To Use Callout -->
+                        <Border Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}" CornerRadius="8" Padding="14">
+                            <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCautionBrush}" Text="Когда применять" />
+                                </StackPanel>
+                                <TextBlock
+                                    x:Name="DetailSkillWhenToUse"
+                                    FontSize="13"
+                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Detailed Description -->
+                        <StackPanel Spacing="6">
+                            <TextBlock FontWeight="SemiBold" FontSize="15" Text="Архитектура и рабочий процесс" />
+                            <TextBlock
+                                x:Name="DetailSkillDescription"
+                                FontSize="13"
+                                LineHeight="20"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <!-- Capabilities -->
+                        <StackPanel x:Name="CapabilitiesSection" Spacing="6">
+                            <TextBlock FontWeight="SemiBold" FontSize="14" Text="Ключевые возможности" />
+                            <ItemsControl x:Name="CapabilitiesList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3" Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                            <TextBlock FontSize="13" Text="{Binding}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Example Prompt Box -->
+                        <StackPanel Spacing="6">
+                            <Grid>
+                                <TextBlock FontWeight="SemiBold" FontSize="14" Text="Пример готового промпта" />
+                                <Button
+                                    HorizontalAlignment="Right"
+                                    Click="OnCopyExamplePromptClick"
+                                    Style="{StaticResource SubtleButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <FontIcon Glyph="&#xE8C8;" FontSize="11" />
+                                        <TextBlock FontSize="12" Text="Копировать" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <Border Background="{ThemeResource SubtleFillColorTertiaryBrush}" CornerRadius="8" Padding="12">
+                                <TextBlock
+                                    x:Name="DetailSkillExamplePrompt"
+                                    FontFamily="Cascadia Code, Consolas"
+                                    FontSize="12"
+                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                    IsTextSelectionEnabled="True"
+                                    TextWrapping="Wrap" />
                             </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
+                        </StackPanel>
+
+                        <!-- Principles -->
+                        <StackPanel x:Name="PrinciplesSection" Spacing="6">
+                            <TextBlock FontWeight="SemiBold" FontSize="14" Text="Инженерные принципы крафта" />
+                            <ItemsControl x:Name="PrinciplesList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3" Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
+                                            <TextBlock FontSize="13" Text="{Binding}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Triggers -->
+                        <StackPanel x:Name="TriggersSection" Spacing="6">
+                            <TextBlock FontWeight="SemiBold" FontSize="14" Text="Триггеры вызова" />
+                            <ItemsControl x:Name="TriggersList">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="5" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,3">
+                                            <TextBlock FontFamily="Cascadia Code, Consolas" FontSize="11" Text="{Binding}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
     </Grid>
 </Page>
