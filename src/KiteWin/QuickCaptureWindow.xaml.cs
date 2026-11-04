@@ -58,6 +58,22 @@ public sealed partial class QuickCaptureWindow : Window
         AppWindow.Hide();
     }
 
+    private void OnSnipClicked(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ms-screenclip:",
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Snipping tool fallback
+        }
+    }
+
     private void SaveAndClose()
     {
         var title = TitleInput.Text.Trim();

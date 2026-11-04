@@ -26,7 +26,15 @@
                 <FontIcon Glyph="&#xE70F;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
                 <TextBlock Text="Быстрый захват идеи" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
-            <TextBlock Text="Ctrl+Shift+K" HorizontalAlignment="Right" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button x:Name="SnipBtn" Click="OnSnipClicked" Padding="8,4" ToolTipService.ToolTip="Запустить Snipping Tool">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE722;" FontSize="12" />
+                        <TextBlock Text="Снимок" FontSize="12" />
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="Ctrl+Shift+K" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+            </StackPanel>
         </Grid>
 
         <!-- Title input -->
