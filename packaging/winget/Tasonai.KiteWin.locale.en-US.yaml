@@ -1,0 +1,10 @@
+PackageIdentifier: Tasonai.KiteWin
+PackageVersion: 1.0.0
+PackageLocale: en-US
+Publisher: Tasonai
+PackageName: KiteWin
+PackageUrl: https://github.com/Tasonai/KiteWin
+License: MIT
+ShortDescription: Windows 11 studio for ideas, architecture and Antigravity skills
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
