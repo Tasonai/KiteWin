@@ -152,22 +152,26 @@ public partial class AppModel : ObservableObject, IDisposable
         var keep = Selection;
         Visible.Clear();
 
-        var query = SearchText?.Trim().ToLowerInvariant() ?? "";
+        var query = SearchText?.Trim() ?? "";
+        IEnumerable<Item> source = _items;
 
-        foreach (var item in _items)
+        if (!string.IsNullOrEmpty(query))
         {
-            if (!Shows(item)) continue;
-
-            if (!string.IsNullOrEmpty(query))
+            // FTS5 ranks title above tags, concept and style; unsearchable input shows everything.
+            var rank = Store.Search(query)
+                .Select((id, position) => (id, position))
+                .ToDictionary(x => x.id, x => x.position);
+            if (ItemStore.BuildMatchQuery(query) is not null)
             {
-                var match = item.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            item.Concept.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            item.Style.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                            item.Platform.Contains(query, StringComparison.OrdinalIgnoreCase);
-                if (!match) continue;
+                source = _items
+                    .Where(item => rank.ContainsKey(item.Id))
+                    .OrderBy(item => rank[item.Id]);
             }
+        }
 
-            Visible.Add(item);
+        foreach (var item in source)
+        {
+            if (Shows(item)) Visible.Add(item);
         }
 
         Selection = keep is not null && Visible.Contains(keep) ? keep : Visible.FirstOrDefault();

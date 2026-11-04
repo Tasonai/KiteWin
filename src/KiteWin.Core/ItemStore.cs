@@ -46,6 +46,27 @@ public sealed class ItemStore : IDisposable
             updated_at TEXT NOT NULL
         );
         """,
+        // Full-text index (FTS5) kept in sync by triggers; existing rows are backfilled.
+        """
+        CREATE VIRTUAL TABLE items_fts USING fts5(
+            id UNINDEXED, title, tags, concept, style, notes,
+            tokenize = 'unicode61 remove_diacritics 2'
+        );
+        INSERT INTO items_fts (id, title, tags, concept, style, notes)
+            SELECT id, title, tags, concept, style, notes FROM items;
+        CREATE TRIGGER items_fts_ai AFTER INSERT ON items BEGIN
+            INSERT INTO items_fts (id, title, tags, concept, style, notes)
+            VALUES (new.id, new.title, new.tags, new.concept, new.style, new.notes);
+        END;
+        CREATE TRIGGER items_fts_au AFTER UPDATE ON items BEGIN
+            DELETE FROM items_fts WHERE id = old.id;
+            INSERT INTO items_fts (id, title, tags, concept, style, notes)
+            VALUES (new.id, new.title, new.tags, new.concept, new.style, new.notes);
+        END;
+        CREATE TRIGGER items_fts_ad AFTER DELETE ON items BEGIN
+            DELETE FROM items_fts WHERE id = old.id;
+        END;
+        """,
     ];
 
     private void Migrate()
@@ -91,6 +112,43 @@ public sealed class ItemStore : IDisposable
             });
         }
         return items;
+    }
+
+    /// <summary>
+    /// Builds an FTS5 query: every word must match as a prefix. Punctuation is dropped,
+    /// so user input can never become FTS syntax. Returns null when nothing searchable remains.
+    /// </summary>
+    public static string? BuildMatchQuery(string input)
+    {
+        var words = new List<string>();
+        var current = new System.Text.StringBuilder();
+        foreach (var ch in input)
+        {
+            if (char.IsLetterOrDigit(ch)) { current.Append(ch); continue; }
+            if (current.Length > 0) { words.Add(current.ToString()); current.Clear(); }
+        }
+        if (current.Length > 0) words.Add(current.ToString());
+        return words.Count == 0 ? null : string.Join(" ", words.Select(w => $"\"{w}\"*"));
+    }
+
+    /// <summary>
+    /// Ids of matching items, best first. Title outranks tags, concept, style and notes.
+    /// </summary>
+    public List<Guid> Search(string input)
+    {
+        var match = BuildMatchQuery(input);
+        if (match is null) return [];
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = """
+            SELECT id FROM items_fts
+            WHERE items_fts MATCH $q
+            ORDER BY bm25(items_fts, 0.0, 10.0, 4.0, 3.0, 1.0, 1.0);
+            """;
+        cmd.Parameters.AddWithValue("$q", match);
+        using var reader = cmd.ExecuteReader();
+        var ids = new List<Guid>();
+        while (reader.Read()) ids.Add(Guid.Parse(reader.GetString(0)));
+        return ids;
     }
 
     public int Count() => Convert.ToInt32(Scalar("SELECT COUNT(*) FROM items;"), CultureInfo.InvariantCulture);

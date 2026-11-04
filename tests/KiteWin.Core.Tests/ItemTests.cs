@@ -147,6 +147,50 @@ public class ItemStoreTests : IDisposable
     }
 
     [Fact]
+    public void SearchRanksTitleAboveConceptAndMatchesPrefixes()
+    {
+        using var store = new ItemStore(_path);
+        var inConcept = new Item("Reader") { Concept = "keeps notes offline" };
+        var inTitle = new Item("Notes app");
+        store.Save(inConcept);
+        store.Save(inTitle);
+
+        var ids = store.Search("note");
+
+        Assert.Equal([inTitle.Id, inConcept.Id], ids);
+    }
+
+    [Fact]
+    public void SearchRequiresEveryWordAndSurvivesUpdatesAndDeletes()
+    {
+        using var store = new ItemStore(_path);
+        var item = new Item("Notes app") { Concept = "offline sync" };
+        store.Save(item);
+
+        Assert.Single(store.Search("notes offline"));
+        Assert.Empty(store.Search("notes missing"));
+
+        item.Title = "Reader";
+        store.Save(item);
+        Assert.Empty(store.Search("notes app"));
+        Assert.Single(store.Search("reader"));
+
+        store.Delete(item.Id);
+        Assert.Empty(store.Search("reader"));
+    }
+
+    [Fact]
+    public void SearchTreatsPunctuationAsPlainText()
+    {
+        using var store = new ItemStore(_path);
+        store.Save(new Item("Notes app"));
+
+        Assert.Single(store.Search("notes\" * ( )"));
+        Assert.Empty(store.Search("\"\"\""));
+        Assert.Null(ItemStore.BuildMatchQuery("  ***  "));
+    }
+
+    [Fact]
     public void SaveTwiceUpdatesInPlace()
     {
         using var store = new ItemStore(_path);
