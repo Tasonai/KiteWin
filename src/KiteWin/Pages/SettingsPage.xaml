@@ -6,37 +6,65 @@
     xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
     xmlns:ui="using:KiteWin.UI">
 
-    <!-- Settings looks like Windows Settings: a title, group headers, and one card per setting. -->
+    <!-- Settings looks like Windows 11 Settings: one card per setting, grouped neatly. -->
     <ScrollViewer>
-        <!-- The Grid centers the column. A ScrollViewer places a child with MaxWidth by its
-             desired width, so in a maximized window the column slides off the right edge. -->
         <Grid>
             <StackPanel
                 MaxWidth="{StaticResource ContentMaxWidth}"
                 Padding="{StaticResource PageMargin}"
                 ui:GridArea.Name="page"
                 ui:GridArea.Inset="{StaticResource SpaceXxl}">
+
+                <!-- Page Header -->
                 <TextBlock
                     Margin="{StaticResource PageHeaderMargin}"
                     Style="{StaticResource TitleTextBlockStyle}"
-                    Text="Settings"
+                    Text="Настройки"
                     ui:GridProbe.Area="page"
                     ui:GridProbe.Name="title" />
 
+                <!-- P2P Sync Section -->
                 <TextBlock
                     Margin="0,0,0,8"
                     Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Text="Appearance"
+                    Text="Синхронизация P2P с macOS"
+                    ui:GridProbe.Area="page"
+                    ui:GridProbe.Name="sync-header" />
+                <StackPanel Spacing="{StaticResource SpaceXs}" ui:GridProbe.Area="page" ui:GridProbe.Name="sync-cards">
+                    <toolkit:SettingsCard Description="URL адрес REST-сервера Kite на macOS (по умолчанию порт 24242)." Header="Адрес Kite macOS">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE895;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <TextBox
+                            x:Name="MacEndpointBox"
+                            MinWidth="260"
+                            PlaceholderText="http://127.0.0.1:24242"
+                            TextChanged="OnMacEndpointChanged" />
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Фоновая репликация банка идей каждые 30 секунд при доступности Mac." Header="Авто-синхронизация">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE945;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ToggleSwitch x:Name="AutoSyncSwitch" Toggled="OnAutoSyncChanged" />
+                    </toolkit:SettingsCard>
+                </StackPanel>
+
+                <!-- Appearance Section -->
+                <TextBlock
+                    Margin="{StaticResource GroupHeaderMargin}"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Text="Внешний вид и стиль"
                     ui:GridProbe.Area="page"
                     ui:GridProbe.Name="appearance" />
                 <StackPanel Spacing="{StaticResource SpaceXs}" ui:GridProbe.Area="page" ui:GridProbe.Name="appearance-cards">
-                    <toolkit:SettingsCard Description="Light, dark, or follow Windows." Header="App theme">
+                    <toolkit:SettingsCard Description="Светлая, темная или системная тема Windows 11 с эффектом Mica." Header="Тема приложения">
                         <toolkit:SettingsCard.HeaderIcon>
                             <FontIcon Glyph="&#xE793;" />
                         </toolkit:SettingsCard.HeaderIcon>
                         <ComboBox x:Name="ThemeBox" MinWidth="200" SelectionChanged="OnThemeChanged" />
                     </toolkit:SettingsCard>
-                    <toolkit:SettingsCard Description="Buttons, selection, and switches use this color." Header="Accent color">
+                    <toolkit:SettingsCard Description="Цвет акцентов кнопок, переключателей и индикаторов." Header="Акцентный цвет">
                         <toolkit:SettingsCard.HeaderIcon>
                             <FontIcon Glyph="&#xE790;" />
                         </toolkit:SettingsCard.HeaderIcon>
@@ -44,17 +72,49 @@
                     </toolkit:SettingsCard>
                 </StackPanel>
 
+                <!-- AI Provider Section -->
                 <TextBlock
                     Margin="{StaticResource GroupHeaderMargin}"
                     Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Text="About"
+                    Text="Искусственный интеллект"
+                    ui:GridProbe.Area="page"
+                    ui:GridProbe.Name="ai-header" />
+                <StackPanel Spacing="{StaticResource SpaceXs}">
+                    <toolkit:SettingsCard Description="Провайдер для генерации AI-спецификаций и архитектурных планов." Header="AI Движок">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE70F;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ComboBox x:Name="AiProviderBox" MinWidth="200" SelectionChanged="OnAiProviderChanged">
+                            <ComboBoxItem Content="Google Gemini API (2.5 Flash / Pro)" Tag="gemini" />
+                            <ComboBoxItem Content="Локальная нейросеть Ollama" Tag="ollama" />
+                            <ComboBoxItem Content="Офлайн-компилятор Stitch (без API)" Tag="offline" />
+                        </ComboBox>
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Ключ авторизации Google AI Studio для генерации без ограничений." Header="Gemini API Key">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE8D7;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <PasswordBox
+                            x:Name="GeminiApiKeyBox"
+                            MinWidth="240"
+                            PasswordChanged="OnGeminiKeyChanged"
+                            PlaceholderText="AIzaSy..." />
+                    </toolkit:SettingsCard>
+                </StackPanel>
+
+                <!-- About Section -->
+                <TextBlock
+                    Margin="{StaticResource GroupHeaderMargin}"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Text="О программе"
                     ui:GridProbe.Area="page"
                     ui:GridProbe.Name="about" />
                 <toolkit:SettingsCard x:Name="AboutCard" Header="KiteWin" ui:GridProbe.Area="page" ui:GridProbe.Name="about-card">
                     <toolkit:SettingsCard.HeaderIcon>
                         <ImageIcon Source="ms-appx:///Assets/AppIcon.png" />
                     </toolkit:SettingsCard.HeaderIcon>
-                    <Button Click="OnOpenDataFolder" Content="Open data folder" />
+                    <Button Click="OnOpenDataFolder" Content="Открыть папку данных" />
                 </toolkit:SettingsCard>
             </StackPanel>
         </Grid>

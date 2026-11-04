@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="KiteWin.Pages.SyncPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="using:KiteWin.UI"
+    NavigationCacheMode="Required">
+
+    <Page.Resources>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
+        </Style>
+    </Page.Resources>
+
+    <Grid
+        Padding="{StaticResource PageMargin}"
+        ui:GridArea.Name="page"
+        ui:GridArea.Inset="{StaticResource SpaceXxl}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Margin="{StaticResource PageHeaderMargin}">
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="P2P-Синхронизация с Kite macOS" />
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Двусторонняя репликация банка идей и спецификаций между macOS и Windows по локальной сети." />
+            </StackPanel>
+        </Grid>
+
+        <!-- Scrollable Sync Dashboard -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel MaxWidth="900" HorizontalAlignment="Left" Spacing="{StaticResource SpaceLg}">
+
+                <!-- Connection Settings Card -->
+                <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="{StaticResource SpaceMd}">
+                        <TextBlock FontWeight="SemiBold" Text="Связь с мостом Kite macOS" />
+
+                        <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox
+                                x:Name="EndpointBox"
+                                Header="Адрес сервера Kite macOS (REST API)"
+                                PlaceholderText="http://127.0.0.1:24242 или IP адрес Mac в локальной сети"
+                                Text="{x:Bind Model.MacEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button
+                                Grid.Column="1"
+                                VerticalAlignment="Bottom"
+                                Click="OnTestConnectionClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE774;" FontSize="14" />
+                                    <TextBlock Text="Проверить связь" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <InfoBar
+                            x:Name="ConnectionInfoBar"
+                            IsOpen="True"
+                            IsClosable="False"
+                            Severity="Informational"
+                            Message="Kite macOS слушает порт 24242 через Network.framework. Для синхронизации с виртуальной машины или по Wi-Fi укажите локальный IP Mac." />
+                    </StackPanel>
+                </Border>
+
+                <!-- Sync Execution & Stats Card -->
+                <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="{StaticResource SpaceLg}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock FontWeight="SemiBold" FontSize="16" Text="Двусторонняя репликация" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Model.SyncStatusText, Mode=OneWay}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{StaticResource SpaceMd}">
+                                <ToggleSwitch
+                                    Header="Авто-синхронизация"
+                                    IsOn="True"
+                                    Toggled="OnAutoSyncToggled" />
+
+                                <Button
+                                    Click="OnSyncNowClick"
+                                    IsEnabled="{x:Bind Model.IsSyncing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}, FallbackValue=True}"
+                                    Style="{StaticResource AccentButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing x:Name="SyncProgress" Width="14" Height="14" IsActive="{x:Bind Model.IsSyncing, Mode=OneWay}" />
+                                        <FontIcon Glyph="&#xE895;" FontSize="14" Visibility="{x:Bind Model.IsSyncing, Mode=OneWay, Converter={StaticResource InverseVisibilityConverter}}" />
+                                        <TextBlock Text="Синхронизировать сейчас" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Metrics Row -->
+                        <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Получено с Mac" />
+                                    <TextBlock x:Name="AddedFromMacText" FontSize="20" FontWeight="Bold" Text="+0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="1" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Отправлено на Mac" />
+                                    <TextBlock x:Name="PushedToMacText" FontSize="20" FontWeight="Bold" Text="0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="8" Padding="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Всего идей в базе" />
+                                    <TextBlock x:Name="TotalIdeasText" FontSize="20" FontWeight="Bold" Text="{x:Bind Model.Items.Count, Mode=OneWay}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Local Windows Sync Server Card -->
+                <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="{StaticResource SpaceMd}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="Локальный сервер KiteWin (HttpListener)" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Позволяет Kite macOS и Web Studio отправлять идеи напрямую в это Windows-приложение." />
+                            </StackPanel>
+                            <Border Grid.Column="1" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" CornerRadius="4" Padding="8,4">
+                                <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorSuccessBrush}" Text="АКТИВЕН : 24243" />
+                            </Border>
+                        </Grid>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock FontSize="12" FontFamily="Cascadia Code, Consolas" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="GET  http://localhost:24243/api/status" />
+                            <TextBlock FontSize="12" FontFamily="Cascadia Code, Consolas" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="GET  http://localhost:24243/api/ideas" />
+                            <TextBlock FontSize="12" FontFamily="Cascadia Code, Consolas" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="POST http://localhost:24243/api/ideas" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Activity Log -->
+                <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="{StaticResource SpaceMd}">
+                        <TextBlock FontWeight="SemiBold" Text="Журнал синхронизации" />
+                        <ListView x:Name="LogList" MinHeight="100" MaxHeight="220" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontFamily="Cascadia Code, Consolas" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding}" />
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

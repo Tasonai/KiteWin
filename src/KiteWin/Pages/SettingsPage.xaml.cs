@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Reflection;
 using KiteWin.UI;
 using Microsoft.UI.Xaml;
@@ -17,9 +17,11 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
 
+        // Theme options
         foreach (var (id, name) in Theme.Modes) ThemeBox.Items.Add(new ComboBoxItem { Content = name, Tag = id });
         ThemeBox.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.Modes, m => m.Id == Prefs.Current.Theme));
 
+        // Accent options
         var windowsAccent = new UISettings().GetColorValue(UIColorType.Accent);
         foreach (var accent in Theme.All)
         {
@@ -36,8 +38,23 @@ public sealed partial class SettingsPage : Page
         }
         AccentBox.SelectedIndex = Math.Max(0, Array.FindIndex(Theme.All, a => a.Id == Prefs.Current.Accent));
 
+        // Sync settings
+        MacEndpointBox.Text = Prefs.Current.MacEndpoint;
+        AutoSyncSwitch.IsOn = Prefs.Current.AutoSync;
+
+        // AI Provider
+        GeminiApiKeyBox.Password = Prefs.Current.GeminiApiKey;
+        var providerIndex = Prefs.Current.AiProvider switch
+        {
+            "ollama" => 1,
+            "offline" => 2,
+            _ => 0
+        };
+        AiProviderBox.SelectedIndex = providerIndex;
+
+        // Version & Info
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        AboutCard.Description = $"Version {version?.Split('+')[0]}. Your data stays on this PC.";
+        AboutCard.Description = $"Версия {version?.Split('+')[0] ?? "1.0.0"}. Все данные хранятся локально в SQLite WAL.";
         _loading = false;
     }
 
@@ -54,10 +71,40 @@ public sealed partial class SettingsPage : Page
         if (_loading || AccentBox.SelectedItem is not ComboBoxItem { Tag: string id }) return;
         Prefs.Current.Accent = id;
         if (!AppPaths.IsOverridden) Prefs.Current.Save();
-        Theme.ApplyAccent(id);
         App.MainWindow.ReapplyAccent();
     }
 
-    private void OnOpenDataFolder(object sender, RoutedEventArgs e) =>
-        Process.Start(new ProcessStartInfo("explorer.exe", System.IO.Path.GetDirectoryName(AppPaths.Store)!) { UseShellExecute = true });
+    private void OnMacEndpointChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.MacEndpoint = MacEndpointBox.Text.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+        App.MainWindow.Model.MacEndpoint = Prefs.Current.MacEndpoint;
+    }
+
+    private void OnAutoSyncChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.AutoSync = AutoSyncSwitch.IsOn;
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnAiProviderChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || AiProviderBox.SelectedItem is not ComboBoxItem item) return;
+        Prefs.Current.AiProvider = item.Tag as string ?? "gemini";
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnGeminiKeyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.GeminiApiKey = GeminiApiKeyBox.Password.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnOpenDataFolder(object sender, RoutedEventArgs e)
+    {
+        Process.Start(new ProcessStartInfo("explorer.exe", AppPaths.Folder) { UseShellExecute = true });
+    }
 }

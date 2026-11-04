@@ -18,25 +18,48 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        this.SizeAndCenter(1100, 720);
-        this.MinimumSize(760, 480);
+        this.SizeAndCenter(1140, 740);
+        this.MinimumSize(780, 500);
         ApplyTheme(Prefs.Current.Theme);
 
-        foreach (var page in Enum.GetValues<SidebarPage>())
-        {
-            Nav.MenuItems.Add(new NavigationViewItem
-            {
-                Content = page.Title(),
-                Icon = new FontIcon { Glyph = page.Glyph() },
-                Tag = page.Id(),
-            });
-        }
+        BuildNavigationMenu();
         Show(model.Page.Id());
     }
 
     public AppModel Model { get; }
 
+    private void BuildNavigationMenu()
+    {
+        Nav.MenuItems.Clear();
+
+        // Project Items
+        AddMenuItem(SidebarPage.All);
+        AddMenuItem(SidebarPage.InProgress);
+        AddMenuItem(SidebarPage.Completed);
+        AddMenuItem(SidebarPage.Starred);
+
+        // Divider
+        Nav.MenuItems.Add(new NavigationViewItemSeparator());
+
+        // Studio & Tools
+        AddMenuItem(SidebarPage.Translator);
+        AddMenuItem(SidebarPage.Skills);
+        AddMenuItem(SidebarPage.Sync);
+    }
+
+    private void AddMenuItem(SidebarPage page)
+    {
+        Nav.MenuItems.Add(new NavigationViewItem
+        {
+            Content = page.Title(),
+            Icon = new FontIcon { Glyph = page.Glyph() },
+            Tag = page.Id(),
+        });
+    }
+
+    /// <summary>
     /// Opens a page by id: a SidebarPage id, or "settings".
+    /// </summary>
     public void Show(string id)
     {
         var target = id == "settings"
@@ -45,7 +68,9 @@ public sealed partial class MainWindow : Window
         if (target is not null && Nav.SelectedItem != target) Nav.SelectedItem = target;
     }
 
+    /// <summary>
     /// "system", "light", or "dark". Also sets the caption buttons to match.
+    /// </summary>
     public void ApplyTheme(string mode)
     {
         Root.RequestedTheme = Theme.Element(mode);
@@ -72,14 +97,42 @@ public sealed partial class MainWindow : Window
         if (args.IsSettingsSelected)
         {
             sender.Header = null;
+            Title = "Настройки - KiteWin";
             ContentFrame.Navigate(typeof(SettingsPage), null, transition);
             return;
         }
+
         if (args.SelectedItem is NavigationViewItem { Tag: string id } && SidebarPages.FromId(id) is { } page)
         {
             Model.Page = page;
             Title = $"{page.Title()} - KiteWin";
-            if (ContentFrame.Content is not ItemsPage) ContentFrame.Navigate(typeof(ItemsPage), null, transition);
+
+            switch (page)
+            {
+                case SidebarPage.Translator:
+                    if (ContentFrame.Content is not PromptTranslatorPage)
+                        ContentFrame.Navigate(typeof(PromptTranslatorPage), null, transition);
+                    break;
+
+                case SidebarPage.Skills:
+                    if (ContentFrame.Content is not SkillsCatalogPage)
+                        ContentFrame.Navigate(typeof(SkillsCatalogPage), null, transition);
+                    break;
+
+                case SidebarPage.Sync:
+                    if (ContentFrame.Content is not SyncPage)
+                        ContentFrame.Navigate(typeof(SyncPage), null, transition);
+                    break;
+
+                case SidebarPage.All:
+                case SidebarPage.InProgress:
+                case SidebarPage.Completed:
+                case SidebarPage.Starred:
+                default:
+                    if (ContentFrame.Content is not ItemsPage)
+                        ContentFrame.Navigate(typeof(ItemsPage), null, transition);
+                    break;
+            }
         }
     }
 

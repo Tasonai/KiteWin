@@ -1,94 +1,204 @@
-using System.ComponentModel;
 using KiteWin.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace KiteWin.Pages;
 
-/// One page for every SidebarPage: the list on the left, the selected item on the right.
 public sealed partial class ItemsPage : Page
 {
     public ItemsPage()
     {
         InitializeComponent();
-        Model.PropertyChanged += OnModelChanged;
-        Model.Visible.CollectionChanged += (_, _) => UpdateStates();
-        Loaded += (_, _) => { ShowPage(); UpdateStates(); };
     }
 
-    public AppModel Model => App.Model;
+    public AppModel Model => ((App)Application.Current).Model;
 
-    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    protected override void OnNavigatedTo(Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
     {
-        switch (e.PropertyName)
+        base.OnNavigatedTo(e);
+        PageTitle.Text = Model.Page.Title();
+        UpdateSelectionUi();
+    }
+
+    private void UpdateSelectionUi()
+    {
+        var item = Model.Selection;
+        var hasSelection = item is not null;
+        Detail.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        NoSelection.Visibility = hasSelection ? Visibility.Collapsed : Visibility.Visible;
+        DeleteButton.IsEnabled = hasSelection;
+        StarButton.IsEnabled = hasSelection;
+
+        if (item is not null)
         {
-            case nameof(AppModel.Page):
-                ShowPage();
-                break;
-            case nameof(AppModel.Selection):
-                if (List.SelectedItem != Model.Selection) List.SelectedItem = Model.Selection;
-                if (Model.Selection is { } item) List.ScrollIntoView(item);
-                Bindings.Update();
-                UpdateStates();
-                break;
+            // Sync status combo
+            for (var i = 0; i < StatusCombo.Items.Count; i++)
+            {
+                if (StatusCombo.Items[i] is ComboBoxItem cbi && (string)cbi.Tag == item.Status)
+                {
+                    StatusCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            // Sync platform combo
+            for (var i = 0; i < PlatformCombo.Items.Count; i++)
+            {
+                if (PlatformCombo.Items[i] is ComboBoxItem cbi && (string)cbi.Content == item.Platform)
+                {
+                    PlatformCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            // Sync style combo
+            for (var i = 0; i < StyleCombo.Items.Count; i++)
+            {
+                if (StyleCombo.Items[i] is ComboBoxItem cbi && (string)cbi.Content == item.Style)
+                {
+                    StyleCombo.SelectedIndex = i;
+                    break;
+                }
+            }
         }
     }
 
-    private void ShowPage()
+    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        PageTitle.Text = Model.Page.Title();
-        EmptyGlyph.Glyph = Model.Page.Glyph();
-        EmptyTitle.Text = Model.Page == SidebarPage.Starred ? "No starred items" : "No items";
+        if (List.SelectedItem is Item item)
+        {
+            Model.Selection = item;
+        }
+        UpdateSelectionUi();
     }
-
-    private void UpdateStates()
-    {
-        var hasSelection = Model.Selection is not null;
-        EmptyList.Visibility = Model.Visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        Detail.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
-        NoSelection.Visibility = hasSelection ? Visibility.Collapsed : Visibility.Visible;
-        StarButton.IsEnabled = hasSelection;
-        DeleteButton.IsEnabled = hasSelection;
-        StarButton.Label = Model.Selection?.IsStarred == true ? "Unstar" : "Star";
-    }
-
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        Model.Selection = List.SelectedItem as Item;
 
     private void OnNew(object sender, RoutedEventArgs e)
     {
-        Model.AddItem();
-        // A new item gets focus, so the user can type its title at once.
-        DispatcherQueue.TryEnqueue(() => TitleBox.Focus(FocusState.Programmatic));
-    }
-
-    private void OnStar(object sender, RoutedEventArgs e)
-    {
-        if (Model.Selection is not { } item) return;
-        item.IsStarred = !item.IsStarred;
-        UpdateStates();
+        var item = Model.AddItem("Новый проект", "Опишите здесь ключевой сценарий...");
+        List.SelectedItem = item;
+        TitleBox.Focus(FocusState.Programmatic);
+        TitleBox.SelectAll();
     }
 
     private void OnDelete(object sender, RoutedEventArgs e)
     {
         if (Model.Selection is { } item) Model.Delete(item);
+        UpdateSelectionUi();
+    }
+
+    private void OnStar(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is { } item) item.IsStarred = !item.IsStarred;
     }
 
     private void OnDeleteKey(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        args.Handled = true;
-        OnDelete(sender, new RoutedEventArgs());
+        if (Model.Selection is { } item)
+        {
+            Model.Delete(item);
+            args.Handled = true;
+        }
     }
 
     private void OnStarRow(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is Item item) item.IsStarred = !item.IsStarred;
-        UpdateStates();
+        if (sender is FrameworkElement { Tag: Item item }) item.IsStarred = !item.IsStarred;
     }
 
     private void OnDeleteRow(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is Item item) Model.Delete(item);
+        if (sender is FrameworkElement { Tag: Item item }) Model.Delete(item);
+        UpdateSelectionUi();
+    }
+
+    private void OnStatusChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Model.Selection is { } item && StatusCombo.SelectedItem is ComboBoxItem cbi && cbi.Tag is string tag)
+        {
+            item.Status = tag;
+        }
+    }
+
+    private void OnPlatformChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Model.Selection is { } item && PlatformCombo.SelectedItem is ComboBoxItem cbi && cbi.Content is string plat)
+        {
+            item.Platform = plat;
+        }
+    }
+
+    private void OnStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Model.Selection is { } item && StyleCombo.SelectedItem is ComboBoxItem cbi && cbi.Content is string style)
+        {
+            item.Style = style;
+        }
+    }
+
+    private void OnCompilePrompt(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var prompt = ItemTitle.CompileStitchPrompt(item);
+        item.GeneratedPrompt = prompt;
+        item.StitchPrompt = prompt;
+        Model.Store.Save(item);
+
+        ShowBanner("Промпт скомпилирован по стандарту Google Stitch (3-частный лэйаут, дизайн-система).", InfoBarSeverity.Success);
+    }
+
+    private void OnCopyPrompt(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item || string.IsNullOrWhiteSpace(item.GeneratedPrompt)) return;
+        var package = new DataPackage();
+        package.SetText(item.GeneratedPrompt);
+        Clipboard.SetContent(package);
+
+        ShowBanner("Промпт скопирован в буфер обмена.", InfoBarSeverity.Informational);
+    }
+
+    private async void OnSyncQuick(object sender, RoutedEventArgs e)
+    {
+        ShowBanner("Запуск P2P-синхронизации с Kite macOS...", InfoBarSeverity.Informational);
+        var result = await Model.TriggerSyncAsync();
+        ShowBanner(result.Message, result.Success ? InfoBarSeverity.Success : InfoBarSeverity.Error);
+    }
+
+    private void OnExportStitch(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var md = DesignExporter.GenerateStitchDesignMd(item);
+        var package = new DataPackage();
+        package.SetText(md);
+        Clipboard.SetContent(package);
+        ShowBanner("Спецификация Google Stitch (DESIGN.md) скопирована в буфер обмена.", InfoBarSeverity.Success);
+    }
+
+    private void OnExportFigma(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var json = DesignExporter.GenerateFigmaTokensJson(item);
+        var package = new DataPackage();
+        package.SetText(json);
+        Clipboard.SetContent(package);
+        ShowBanner("Дизайн-токены Figma (W3C JSON) скопированы в буфер обмена.", InfoBarSeverity.Success);
+    }
+
+    private void OnExportFigJam(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var diag = DesignExporter.GenerateFigJamDiagram(item);
+        var package = new DataPackage();
+        package.SetText(diag);
+        Clipboard.SetContent(package);
+        ShowBanner("Схема Mermaid для FigJam скопирована в буфер обмена.", InfoBarSeverity.Success);
+    }
+
+    private void ShowBanner(string text, InfoBarSeverity severity)
+    {
+        StatusBanner.Message = text;
+        StatusBanner.Severity = severity;
+        StatusBanner.IsOpen = true;
     }
 }

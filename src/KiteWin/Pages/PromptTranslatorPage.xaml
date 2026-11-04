@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="KiteWin.Pages.PromptTranslatorPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="using:KiteWin.UI"
+    NavigationCacheMode="Required">
+
+    <Page.Resources>
+        <Style x:Key="CardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{ThemeResource OverlayCornerRadius}" />
+        </Style>
+    </Page.Resources>
+
+    <Grid
+        Padding="{StaticResource PageMargin}"
+        ui:GridArea.Name="page"
+        ui:GridArea.Inset="{StaticResource SpaceXxl}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Margin="{StaticResource PageHeaderMargin}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Промпт-переводчик Antigravity" />
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Превращайте тезисы и концепции в инженерную спецификацию /plan и Google Stitch." />
+            </StackPanel>
+            <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" IsOpen="False">
+                <AppBarButton Click="OnCopyOutput" Icon="Copy" Label="Скопировать" />
+                <AppBarButton Click="OnSaveToIdeas" Icon="Save" Label="Сохранить в идеи" />
+            </CommandBar>
+        </Grid>
+
+        <!-- Main Studio Grid -->
+        <Grid Grid.Row="1" ColumnSpacing="{StaticResource SpaceLg}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel: Input, Mode & Presets -->
+            <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="{StaticResource SpaceMd}">
+                        <!-- Mode Selector -->
+                        <TextBlock FontWeight="SemiBold" Text="Режим генерации" />
+                        <Segmented x:Name="ModeSegmented" SelectionChanged="OnModeChanged">
+                            <SegmentedItem Content="План" Tag="plan" />
+                            <SegmentedItem Content="Stitch" Tag="stitch" IsSelected="True" />
+                            <SegmentedItem Content="Точечный" Tag="targeted" />
+                            <SegmentedItem Content="Бриф" Tag="brief" />
+                            <SegmentedItem Content="Действия" Tag="actions" />
+                        </Segmented>
+
+                        <!-- Presets Bar -->
+                        <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Быстрые пресеты" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Click="OnPresetStitchLanding" Content="Stitch Landing" />
+                            <Button Click="OnPresetClaudePaper" Content="Claude Paper" />
+                            <Button Click="OnPresetCodexMinimal" Content="Codex Minimal" />
+                            <Button Click="OnPresetTerracotta" Content="Terracotta" />
+                            <Button Click="OnPresetLinear" Content="Linear Cockpit" />
+                        </StackPanel>
+
+                        <!-- Title and Concept Inputs -->
+                        <TextBox
+                            x:Name="InputTitleBox"
+                            Header="Название проекта"
+                            PlaceholderText="Например: SaaS Analytics DevTool Cockpit"
+                            TextChanged="OnInputChanged" />
+
+                        <TextBox
+                            x:Name="InputConceptBox"
+                            MinHeight="130"
+                            AcceptsReturn="True"
+                            Header="Ваша идея или сценарий"
+                            PlaceholderText="Опишите экран, логику, фильтры, API и целевую аудиторию..."
+                            TextChanged="OnInputChanged"
+                            TextWrapping="Wrap" />
+
+                        <!-- Targeted Edit fields (visible in targeted mode) -->
+                        <StackPanel x:Name="TargetedEditPanel" Spacing="8" Visibility="Collapsed">
+                            <TextBox x:Name="TargetElementBox" Header="Целевой компонент" PlaceholderText="Например: FilterBar, модальное окно, карточка метрик" />
+                            <TextBox x:Name="TargetScopeBox" Header="Детали изменений" PlaceholderText="Например: добавить анимацию sub-250ms, кольцо фокуса и валидацию" />
+                        </StackPanel>
+
+                        <!-- Platform & Design System Selectors -->
+                        <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <ComboBox
+                                x:Name="PlatformBox"
+                                Header="Платформа"
+                                HorizontalAlignment="Stretch"
+                                SelectedIndex="0"
+                                SelectionChanged="OnInputChanged">
+                                <ComboBoxItem Content="Web" />
+                                <ComboBoxItem Content="Mobile" />
+                                <ComboBoxItem Content="Desktop" />
+                            </ComboBox>
+
+                            <ComboBox
+                                x:Name="StyleBox"
+                                Header="Дизайн-система"
+                                HorizontalAlignment="Stretch"
+                                SelectedIndex="0"
+                                SelectionChanged="OnInputChanged">
+                                <ComboBoxItem Content="Editorial &amp; Swiss Modern" />
+                                <ComboBoxItem Content="Claude Paper" />
+                                <ComboBoxItem Content="Codex Minimal" />
+                                <ComboBoxItem Content="Terracotta Journal" />
+                                <ComboBoxItem Content="Risograph Print" />
+                                <ComboBoxItem Content="Linear &amp; DevTool Cockpit" />
+                                <ComboBoxItem Content="Neo-Brutalism &amp; Tactical" />
+                                <ComboBoxItem Content="Voxel &amp; 3D Isometric" />
+                                <ComboBoxItem Content="Dark Glassmorphism" />
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Active Antigravity Skills -->
+                        <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Активные скиллы Antigravity" />
+                        <WrapPanel Orientation="Horizontal">
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@enhance-prompt" />
+                            </Border>
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@design-md" />
+                            </Border>
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@taste-design" />
+                            </Border>
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@emil-design-eng" />
+                            </Border>
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@a11y-debugging" />
+                            </Border>
+                            <Border Margin="0,0,6,6" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,2">
+                                <TextBlock FontSize="11" Text="@subagent-driven-development" />
+                            </Border>
+                        </WrapPanel>
+
+                        <!-- Compile Button -->
+                        <Button
+                            Click="OnCompileClick"
+                            HorizontalAlignment="Stretch"
+                            Style="{StaticResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                                <TextBlock FontWeight="SemiBold" Text="Скомпилировать спецификацию" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Right Panel: Output & Density Gauge -->
+            <Border Padding="{StaticResource CardPadding}" Style="{StaticResource CardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Quality Gauge Header -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock FontWeight="SemiBold" Text="Индекс инженерной плотности" />
+                            <ProgressBar x:Name="QualityBar" Height="6" Maximum="100" Value="85" />
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="QualityText"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            FontFamily="Cascadia Code, Consolas"
+                            FontWeight="Bold"
+                            Text="85%" />
+                    </Grid>
+
+                    <!-- Output Text Area -->
+                    <TextBox
+                        x:Name="OutputTextBox"
+                        Grid.Row="1"
+                        AcceptsReturn="True"
+                        FontFamily="Cascadia Code, Consolas"
+                        FontSize="12"
+                        Header="Результат компиляции"
+                        PlaceholderText="Здесь появится готовый промпт для Google Stitch или Claude Code..."
+                        TextWrapping="Wrap" />
+
+                    <!-- Bottom Notification -->
+                    <InfoBar
+                        x:Name="TranslatorBanner"
+                        Grid.Row="2"
+                        Margin="0,8,0,0"
+                        IsOpen="False"
+                        IsClosable="True" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

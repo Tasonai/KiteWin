@@ -8,7 +8,6 @@
     NavigationCacheMode="Required">
 
     <Page.Resources>
-        <!-- One card look for the list and the detail. Theme brushes only: they follow light, dark, and high contrast. -->
         <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
@@ -26,9 +25,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header: the page title on the left, the page's commands on the right. -->
-        <!-- The probe sits on the header row, not the title: the title is centered against
-             the taller command bar, so its own bottom edge is not a grid line. -->
+        <!-- Header: Page title on left, CommandBar on right -->
         <Grid
             Margin="{StaticResource PageHeaderMargin}"
             ui:GridProbe.Area="page"
@@ -46,12 +43,20 @@
                 Background="Transparent"
                 DefaultLabelPosition="Right"
                 IsOpen="False">
-                <AppBarButton x:Name="NewButton" Click="OnNew" Icon="Add" Label="New item">
+                <AppBarButton x:Name="SyncQuickButton" Click="OnSyncQuick" Label="Синхронизация">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE895;" />
+                    </AppBarButton.Icon>
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="R" Modifiers="Control" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <AppBarButton x:Name="NewButton" Click="OnNew" Icon="Add" Label="Новая идея">
                     <AppBarButton.KeyboardAccelerators>
                         <KeyboardAccelerator Key="N" Modifiers="Control" />
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
-                <AppBarButton x:Name="StarButton" Click="OnStar" Label="Star">
+                <AppBarButton x:Name="StarButton" Click="OnStar" Label="В избранное">
                     <AppBarButton.Icon>
                         <FontIcon Glyph="&#xE734;" />
                     </AppBarButton.Icon>
@@ -59,16 +64,18 @@
                         <KeyboardAccelerator Key="D" Modifiers="Control" />
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
-                <AppBarButton x:Name="DeleteButton" Click="OnDelete" Icon="Delete" Label="Delete" KeyboardAcceleratorTextOverride="Delete" />
+                <AppBarButton x:Name="DeleteButton" Click="OnDelete" Icon="Delete" Label="Удалить" KeyboardAcceleratorTextOverride="Delete" />
             </CommandBar>
         </Grid>
 
+        <!-- Master-Detail Layout -->
         <Grid Grid.Row="1" ColumnSpacing="{StaticResource SpaceLg}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="{StaticResource ListColumnWidth}" />
+                <ColumnDefinition Width="340" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
+            <!-- Left Master List -->
             <Border Style="{StaticResource CardStyle}" ui:GridProbe.Area="page" ui:GridProbe.Name="list">
                 <Grid>
                     <ListView
@@ -78,44 +85,70 @@
                         SelectionChanged="OnSelectionChanged"
                         SelectionMode="Single">
                         <ListView.KeyboardAccelerators>
-                            <!-- Delete only while the list has focus, so it never fires in a text box. -->
                             <KeyboardAccelerator Key="Delete" Invoked="OnDeleteKey" ScopeOwner="{x:Bind List}" />
                         </ListView.KeyboardAccelerators>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="core:Item">
-                                <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                                <Grid Padding="8,6" ColumnSpacing="{StaticResource SpaceMd}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.ContextFlyout>
                                         <MenuFlyout>
-                                            <MenuFlyoutItem Click="OnStarRow" Tag="{x:Bind}" Text="Star or unstar">
+                                            <MenuFlyoutItem Click="OnStarRow" Tag="{x:Bind}" Text="В избранное">
                                                 <MenuFlyoutItem.Icon>
                                                     <FontIcon Glyph="&#xE734;" />
                                                 </MenuFlyoutItem.Icon>
                                             </MenuFlyoutItem>
                                             <MenuFlyoutSeparator />
-                                            <MenuFlyoutItem Click="OnDeleteRow" Icon="Delete" Tag="{x:Bind}" Text="Delete" />
+                                            <MenuFlyoutItem Click="OnDeleteRow" Icon="Delete" Tag="{x:Bind}" Text="Удалить" />
                                         </MenuFlyout>
                                     </Grid.ContextFlyout>
+
+                                    <!-- Status Icon -->
                                     <FontIcon
+                                        VerticalAlignment="Top"
+                                        Margin="0,2,0,0"
+                                        FontSize="14"
+                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                        Glyph="{x:Bind StatusGlyph, Mode=OneWay}" />
+
+                                    <!-- Title and Info -->
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock
+                                            Text="{x:Bind DisplayTitle, Mode=OneWay}"
+                                            FontWeight="SemiBold"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="4,1">
+                                                <TextBlock
+                                                    Text="{x:Bind Platform, Mode=OneWay}"
+                                                    FontSize="10"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            </Border>
+                                            <TextBlock
+                                                Text="{x:Bind Style, Mode=OneWay}"
+                                                FontSize="11"
+                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Star Icon -->
+                                    <FontIcon
+                                        Grid.Column="2"
                                         VerticalAlignment="Center"
-                                        FontSize="16"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        FontSize="14"
+                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                         Glyph="{x:Bind StarGlyph, Mode=OneWay}" />
-                                    <TextBlock
-                                        Grid.Column="1"
-                                        VerticalAlignment="Center"
-                                        Text="{x:Bind DisplayTitle, Mode=OneWay}"
-                                        TextTrimming="CharacterEllipsis"
-                                        ToolTipService.ToolTip="{x:Bind DisplayTitle, Mode=OneWay}" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
 
-                    <!-- Empty state: what the page is for, and the first action. -->
+                    <!-- Empty state -->
                     <StackPanel
                         x:Name="EmptyList"
                         Padding="{StaticResource CardPadding}"
@@ -126,48 +159,177 @@
                             x:Name="EmptyGlyph"
                             HorizontalAlignment="Center"
                             FontSize="{StaticResource EmptyStateGlyphSize}"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Glyph="&#xE793;" />
                         <TextBlock
                             x:Name="EmptyTitle"
                             HorizontalAlignment="Center"
-                            Style="{StaticResource SubtitleTextBlockStyle}" />
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="Нет идей" />
                         <TextBlock
                             HorizontalAlignment="Center"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Press Ctrl+N to add one."
+                            Text="Нажмите Ctrl+N, чтобы создать новую идею."
                             TextAlignment="Center"
                             TextWrapping="Wrap" />
                         <Button
                             Margin="0,8,0,0"
                             HorizontalAlignment="Center"
                             Click="OnNew"
-                            Content="New item"
+                            Content="Новая идея"
                             Style="{StaticResource AccentButtonStyle}" />
                     </StackPanel>
                 </Grid>
             </Border>
 
+            <!-- Right Detail Panel -->
             <Border
                 Grid.Column="1"
                 Padding="{StaticResource CardPadding}"
-                Style="{StaticResource CardStyle}"
-                ui:GridProbe.Area="page"
-                ui:GridProbe.Edge="">
+                Style="{StaticResource CardStyle}">
                 <Grid>
-                    <StackPanel x:Name="Detail" Spacing="{StaticResource SpaceLg}">
-                        <TextBox
-                            x:Name="TitleBox"
-                            Header="Title"
-                            PlaceholderText="Untitled"
-                            Text="{x:Bind Model.Selection.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />
-                        <ToggleSwitch Header="Starred" IsOn="{x:Bind Model.Selection.IsStarred, Mode=TwoWay, FallbackValue=False}" />
-                        <TextBox
-                            MinHeight="120"
-                            AcceptsReturn="True"
-                            Header="Notes"
-                            Text="{x:Bind Model.Selection.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                    <ScrollViewer x:Name="DetailScroll" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="Detail" Spacing="{StaticResource SpaceLg}">
+                            <!-- Title Bar -->
+                            <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox
+                                    x:Name="TitleBox"
+                                    Header="Название идеи"
+                                    FontSize="16"
+                                    FontWeight="SemiBold"
+                                    PlaceholderText="Название проекта..."
+                                    Text="{x:Bind Model.Selection.Title, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />
+                                <ToggleButton
+                                    Grid.Column="1"
+                                    VerticalAlignment="Bottom"
+                                    IsChecked="{x:Bind Model.Selection.IsStarred, Mode=TwoWay, FallbackValue=False}"
+                                    ToolTipService.ToolTip="Избранное">
+                                    <FontIcon Glyph="&#xE735;" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                </ToggleButton>
+                            </Grid>
+
+                            <!-- Metadata Row: Status, Platform, Style -->
+                            <Grid ColumnSpacing="{StaticResource SpaceMd}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <ComboBox
+                                    x:Name="StatusCombo"
+                                    Grid.Column="0"
+                                    Header="Статус"
+                                    HorizontalAlignment="Stretch"
+                                    SelectionChanged="OnStatusChanged">
+                                    <ComboBoxItem Content="В планах" Tag="backlog" />
+                                    <ComboBoxItem Content="В разработке" Tag="in_progress" />
+                                    <ComboBoxItem Content="Готово" Tag="completed" />
+                                </ComboBox>
+
+                                <ComboBox
+                                    x:Name="PlatformCombo"
+                                    Grid.Column="1"
+                                    Header="Платформа"
+                                    HorizontalAlignment="Stretch"
+                                    SelectionChanged="OnPlatformChanged">
+                                    <ComboBoxItem Content="Web" />
+                                    <ComboBoxItem Content="Mobile" />
+                                    <ComboBoxItem Content="Desktop" />
+                                </ComboBox>
+
+                                <ComboBox
+                                    x:Name="StyleCombo"
+                                    Grid.Column="2"
+                                    Header="Дизайн-система"
+                                    HorizontalAlignment="Stretch"
+                                    SelectionChanged="OnStyleChanged">
+                                    <ComboBoxItem Content="Editorial &amp; Swiss Modern" />
+                                    <ComboBoxItem Content="Claude Paper" />
+                                    <ComboBoxItem Content="Codex Minimal" />
+                                    <ComboBoxItem Content="Terracotta Journal" />
+                                    <ComboBoxItem Content="Risograph Print" />
+                                    <ComboBoxItem Content="Linear &amp; DevTool Cockpit" />
+                                    <ComboBoxItem Content="Neo-Brutalism &amp; Tactical" />
+                                    <ComboBoxItem Content="Voxel &amp; 3D Isometric" />
+                                    <ComboBoxItem Content="Dark Glassmorphism" />
+                                </ComboBox>
+                            </Grid>
+
+                            <!-- Concept & JTBD Input -->
+                            <TextBox
+                                MinHeight="110"
+                                AcceptsReturn="True"
+                                Header="Концепция и сценарий (JTBD)"
+                                PlaceholderText="Опишите ключевой пользовательский сценарий и требования..."
+                                Text="{x:Bind Model.Selection.Concept, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                                TextWrapping="Wrap" />
+
+                            <!-- Action Command Buttons -->
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpaceMd}">
+                                <Button
+                                    Click="OnCompilePrompt"
+                                    Style="{StaticResource AccentButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                                        <TextBlock Text="Скомпилировать Stitch промпт" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Click="OnCopyPrompt">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                        <TextBlock Text="Скопировать" />
+                                    </StackPanel>
+                                </Button>
+
+                                <DropDownButton Content="Экспорт">
+                                    <DropDownButton.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Click="OnExportStitch" Text="Google Stitch (DESIGN.md)">
+                                                <MenuFlyoutItem.Icon>
+                                                    <FontIcon Glyph="&#xE790;" />
+                                                </MenuFlyoutItem.Icon>
+                                            </MenuFlyoutItem>
+                                            <MenuFlyoutItem Click="OnExportFigma" Text="Figma Design Tokens (JSON)">
+                                                <MenuFlyoutItem.Icon>
+                                                    <FontIcon Glyph="&#xE8B9;" />
+                                                </MenuFlyoutItem.Icon>
+                                            </MenuFlyoutItem>
+                                            <MenuFlyoutItem Click="OnExportFigJam" Text="Схема FigJam (Mermaid)">
+                                                <MenuFlyoutItem.Icon>
+                                                    <FontIcon Glyph="&#xE8A5;" />
+                                                </MenuFlyoutItem.Icon>
+                                            </MenuFlyoutItem>
+                                        </MenuFlyout>
+                                    </DropDownButton.Flyout>
+                                </DropDownButton>
+                            </StackPanel>
+
+                            <!-- Generated Prompt Display -->
+                            <TextBox
+                                MinHeight="180"
+                                AcceptsReturn="True"
+                                IsReadOnly="False"
+                                Header="Скомпилированный промпт (3-part Stitch / Master Plan)"
+                                FontFamily="Cascadia Code, Consolas"
+                                FontSize="12"
+                                Text="{x:Bind Model.Selection.GeneratedPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                                TextWrapping="Wrap" />
+
+                            <!-- Notification Banner -->
+                            <InfoBar
+                                x:Name="StatusBanner"
+                                IsOpen="False"
+                                IsClosable="True" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- No Selection state -->
                     <StackPanel
                         x:Name="NoSelection"
                         HorizontalAlignment="Center"
@@ -177,12 +339,12 @@
                             HorizontalAlignment="Center"
                             FontSize="{StaticResource EmptyStateGlyphSize}"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Glyph="&#xE8A5;" />
-                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" Text="No selection" />
+                            Glyph="&#xE793;" />
+                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" Text="Выберите идею" />
                         <TextBlock
                             HorizontalAlignment="Center"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Select an item to see its details." />
+                            Text="Выберите проект в списке слева или создайте новый." />
                     </StackPanel>
                 </Grid>
             </Border>

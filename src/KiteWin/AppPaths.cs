@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace KiteWin;
@@ -37,6 +37,11 @@ public sealed class Prefs
     public string Theme { get; set; } = "system";
     public string Accent { get; set; } = UI.Theme.DefaultId;
     public string LastPage { get; set; } = "all";
+    public string MacEndpoint { get; set; } = "http://127.0.0.1:24242";
+    public bool AutoSync { get; set; } = true;
+    public string AiProvider { get; set; } = "Gemini API";
+    public string GeminiApiKey { get; set; } = "";
+    public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
 
     private static Prefs? _current;
     public static Prefs Current => _current ??= Load();
