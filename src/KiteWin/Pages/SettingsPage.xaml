@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="KiteWin.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
+    xmlns:ui="using:KiteWin.UI">
+
+    <!-- Settings looks like Windows Settings: a title, group headers, and one card per setting. -->
+    <ScrollViewer>
+        <!-- The Grid centers the column. A ScrollViewer places a child with MaxWidth by its
+             desired width, so in a maximized window the column slides off the right edge. -->
+        <Grid>
+            <StackPanel
+                MaxWidth="{StaticResource ContentMaxWidth}"
+                Padding="{StaticResource PageMargin}"
+                ui:GridArea.Name="page"
+                ui:GridArea.Inset="{StaticResource SpaceXxl}">
+                <TextBlock
+                    Margin="{StaticResource PageHeaderMargin}"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="Settings"
+                    ui:GridProbe.Area="page"
+                    ui:GridProbe.Name="title" />
+
+                <TextBlock
+                    Margin="0,0,0,8"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Text="Appearance"
+                    ui:GridProbe.Area="page"
+                    ui:GridProbe.Name="appearance" />
+                <StackPanel Spacing="{StaticResource SpaceXs}" ui:GridProbe.Area="page" ui:GridProbe.Name="appearance-cards">
+                    <toolkit:SettingsCard Description="Light, dark, or follow Windows." Header="App theme">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE793;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ComboBox x:Name="ThemeBox" MinWidth="200" SelectionChanged="OnThemeChanged" />
+                    </toolkit:SettingsCard>
+                    <toolkit:SettingsCard Description="Buttons, selection, and switches use this color." Header="Accent color">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE790;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ComboBox x:Name="AccentBox" MinWidth="200" SelectionChanged="OnAccentChanged" />
+                    </toolkit:SettingsCard>
+                </StackPanel>
+
+                <TextBlock
+                    Margin="{StaticResource GroupHeaderMargin}"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Text="About"
+                    ui:GridProbe.Area="page"
+                    ui:GridProbe.Name="about" />
+                <toolkit:SettingsCard x:Name="AboutCard" Header="KiteWin" ui:GridProbe.Area="page" ui:GridProbe.Name="about-card">
+                    <toolkit:SettingsCard.HeaderIcon>
+                        <ImageIcon Source="ms-appx:///Assets/AppIcon.png" />
+                    </toolkit:SettingsCard.HeaderIcon>
+                    <Button Click="OnOpenDataFolder" Content="Open data folder" />
+                </toolkit:SettingsCard>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Page>

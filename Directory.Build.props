@@ -1,0 +1,10 @@
+﻿<Project>
+  <PropertyGroup>
+    <!-- Build products live outside the repo (and outside OneDrive, which would try to sync them).
+         One folder per checkout, named after it, so agents in separate git worktrees never share build output. -->
+    <ArtifactsPath>$(LOCALAPPDATA)\Dev\KiteWin\$([System.IO.Path]::GetFileName($(MSBuildThisFileDirectory.TrimEnd('\'))))</ArtifactsPath>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+</Project>

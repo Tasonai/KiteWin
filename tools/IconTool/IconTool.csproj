@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Renders Icon/AppIcon.svg to the app's .ico and .png, and a review sheet. Run through tools/make-icon.ps1. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Svg.Skia" Version="5.2.3" />
+  </ItemGroup>
+</Project>
