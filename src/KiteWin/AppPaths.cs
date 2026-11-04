@@ -41,7 +41,9 @@ public sealed class Prefs
     public bool AutoSync { get; set; } = true;
     public string AiProvider { get; set; } = "Gemini API";
     public string GeminiApiKey { get; set; } = "";
+    public string GeminiModel { get; set; } = "gemini-2.5-flash";
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
+    public string OllamaModel { get; set; } = "llama3";
 
     private static Prefs? _current;
     public static Prefs Current => _current ??= Load();

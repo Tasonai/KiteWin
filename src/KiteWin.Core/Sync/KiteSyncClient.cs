@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using KiteWin.Core.Models;
 
 namespace KiteWin.Core.Sync;
 
@@ -193,6 +194,83 @@ public sealed class KiteSyncClient : IDisposable
         result.TotalMerged = mergedSet.Count;
         result.Message = $"Синхронизировано: +{addedCount} с Mac, {updatedCount} обновлено, {mergedSet.Count} всего.";
         return result;
+    }
+
+    /// <summary>
+    /// Pulls the complete Canvas graph from Kite macOS.
+    /// </summary>
+    public async Task<CanvasGraphSnapshot?> PullCanvasAsync(string endpoint)
+    {
+        try
+        {
+            var url = FormatUrl(endpoint, "/api/canvas");
+            return await _http.GetFromJsonAsync<CanvasGraphSnapshot>(url, JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Pushes the local Canvas snapshot to Kite macOS.
+    /// </summary>
+    public async Task<bool> PushCanvasAsync(string endpoint, CanvasGraphSnapshot snapshot)
+    {
+        try
+        {
+            var url = FormatUrl(endpoint, "/api/canvas");
+            var response = await _http.PostAsJsonAsync(url, snapshot, JsonOptions);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Bidirectionally syncs the infinite canvas graph with Kite macOS.
+    /// </summary>
+    public async Task<bool> SyncCanvasBidirectionalAsync(string endpoint, CanvasStore store)
+    {
+        var remote = await PullCanvasAsync(endpoint);
+        if (remote != null && remote.Frames.Count + remote.Stickies.Count > 0)
+        {
+            // Merge remote items into local
+            foreach (var frame in remote.Frames)
+            {
+                if (!store.Snapshot.Frames.Any(f => f.Title == frame.Title || f.Id == frame.Id))
+                {
+                    store.Snapshot.Frames.Add(frame);
+                }
+            }
+            foreach (var sticky in remote.Stickies)
+            {
+                if (!store.Snapshot.Stickies.Any(s => s.Text == sticky.Text || s.Id == sticky.Id))
+                {
+                    store.Snapshot.Stickies.Add(sticky);
+                }
+            }
+            foreach (var refCard in remote.ReferenceCards)
+            {
+                if (!store.Snapshot.ReferenceCards.Any(r => r.Title == refCard.Title || r.Id == refCard.Id))
+                {
+                    store.Snapshot.ReferenceCards.Add(refCard);
+                }
+            }
+            foreach (var conn in remote.Connections)
+            {
+                if (!store.Snapshot.Connections.Any(c => c.FromId == conn.FromId && c.ToId == conn.ToId))
+                {
+                    store.Snapshot.Connections.Add(conn);
+                }
+            }
+            store.Save();
+        }
+
+        // Push merged state back to remote
+        return await PushCanvasAsync(endpoint, store.Snapshot);
     }
 
     public static KiteIdeaDTO ItemToDto(Item item)

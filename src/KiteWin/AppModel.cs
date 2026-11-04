@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using KiteWin.Core;
+using KiteWin.Core.Models;
 using KiteWin.Core.Sync;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -17,6 +18,7 @@ public enum SidebarPage
     InProgress,
     Completed,
     Starred,
+    Canvas,
     Translator,
     Skills,
     Sync
@@ -32,6 +34,7 @@ public static class SidebarPages
         SidebarPage.InProgress => "В разработке",
         SidebarPage.Completed => "Готово",
         SidebarPage.Starred => "Избранное",
+        SidebarPage.Canvas => "Холст идей",
         SidebarPage.Translator => "Промпт-переводчик",
         SidebarPage.Skills => "База скиллов",
         SidebarPage.Sync => "Синхронизация P2P",
@@ -47,6 +50,7 @@ public static class SidebarPages
         SidebarPage.InProgress => 0xE945,   // LightningBolt
         SidebarPage.Completed => 0xE73E,    // Checkmark
         SidebarPage.Starred => 0xE735,      // FavoriteStarFill
+        SidebarPage.Canvas => 0xE746,       // ViewAll / Canvas Grid
         SidebarPage.Translator => 0xE70F,   // Edit
         SidebarPage.Skills => 0xE950,       // DeveloperTools
         SidebarPage.Sync => 0xE895,         // Sync
@@ -67,11 +71,12 @@ public partial class AppModel : ObservableObject, IDisposable
     public AppModel(ItemStore store)
     {
         Store = store;
+        CanvasStore = new CanvasStore();
         _items = store.All();
         foreach (var item in _items) item.PropertyChanged += OnItemChanged;
 
         SyncClient = new KiteSyncClient();
-        SyncServer = new KiteSyncServer(store);
+        SyncServer = new KiteSyncServer(store, CanvasStore);
         SyncServer.Start();
 
         MacEndpoint = Prefs.Current.MacEndpoint;
@@ -89,6 +94,7 @@ public partial class AppModel : ObservableObject, IDisposable
     }
 
     public ItemStore Store { get; }
+    public CanvasStore CanvasStore { get; }
     public KiteSyncClient SyncClient { get; }
     public KiteSyncServer SyncServer { get; }
 

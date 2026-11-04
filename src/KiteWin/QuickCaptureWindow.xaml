@@ -1,0 +1,95 @@
+<Window
+    x:Class="KiteWin.QuickCaptureWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Быстрый захват идеи - KiteWin"
+    mc:Ignorable="d">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Padding="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE70F;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="Быстрый захват идеи" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Text="Ctrl+Shift+K" HorizontalAlignment="Right" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Title input -->
+        <TextBox x:Name="TitleInput"
+                 Grid.Row="1"
+                 PlaceholderText="Название проекта или идеи..."
+                 FontSize="15"
+                 FontWeight="Medium"
+                 Margin="0,0,0,12"
+                 KeyDown="OnTitleKeyDown" />
+
+        <!-- Metadata row -->
+        <Grid Grid.Row="2" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ComboBox x:Name="PlatformPicker"
+                      Grid.Column="0"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="0">
+                <ComboBoxItem Content="Web" />
+                <ComboBoxItem Content="Mobile" />
+                <ComboBoxItem Content="Desktop" />
+            </ComboBox>
+
+            <ComboBox x:Name="StylePicker"
+                      Grid.Column="2"
+                      HorizontalAlignment="Stretch"
+                      SelectedIndex="0">
+                <ComboBoxItem Content="Editorial &amp; Swiss Modern" />
+                <ComboBoxItem Content="Linear &amp; DevTool Cockpit" />
+                <ComboBoxItem Content="Neo-Brutalism &amp; Tactical" />
+                <ComboBoxItem Content="Voxel &amp; 3D Isometric" />
+            </ComboBox>
+        </Grid>
+
+        <!-- Concept input -->
+        <TextBox x:Name="ConceptInput"
+                 Grid.Row="3"
+                 PlaceholderText="Опишите ключевой сценарий, ценность или архитектурные требования (JTBD)..."
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,16"
+                 KeyDown="OnConceptKeyDown" />
+
+        <!-- Action buttons -->
+        <Grid Grid.Row="4">
+            <TextBlock Text="Нажмите Ctrl+Enter для быстрого сохранения"
+                       FontSize="11"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                       VerticalAlignment="Center" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button Content="Отмена (Esc)" Click="OnCancelClicked" />
+                <Button Content="Сохранить" Style="{ThemeResource AccentButtonStyle}" Click="OnSaveClicked">
+                    <Button.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Modifiers="Control" />
+                    </Button.KeyboardAccelerators>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

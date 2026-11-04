@@ -1,4 +1,5 @@
 using KiteWin.Pages;
+using KiteWin.Services;
 using KiteWin.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -24,9 +25,21 @@ public sealed partial class MainWindow : Window
 
         BuildNavigationMenu();
         Show(model.Page.Id());
+
+        QuickCapture = new QuickCaptureWindow(model);
+        QuickCaptureService = new QuickCaptureService(this, QuickCapture);
+
+        AppWindow.Closing += (sender, args) =>
+        {
+            // Minimize to background tray daemon mode
+            args.Cancel = true;
+            AppWindow.Hide();
+        };
     }
 
     public AppModel Model { get; }
+    public QuickCaptureWindow QuickCapture { get; }
+    public QuickCaptureService QuickCaptureService { get; }
 
     private void BuildNavigationMenu()
     {
@@ -42,6 +55,7 @@ public sealed partial class MainWindow : Window
         Nav.MenuItems.Add(new NavigationViewItemSeparator());
 
         // Studio & Tools
+        AddMenuItem(SidebarPage.Canvas);
         AddMenuItem(SidebarPage.Translator);
         AddMenuItem(SidebarPage.Skills);
         AddMenuItem(SidebarPage.Sync);
@@ -109,6 +123,11 @@ public sealed partial class MainWindow : Window
 
             switch (page)
             {
+                case SidebarPage.Canvas:
+                    if (ContentFrame.Content is not CanvasPage)
+                        ContentFrame.Navigate(typeof(CanvasPage), null, transition);
+                    break;
+
                 case SidebarPage.Translator:
                     if (ContentFrame.Content is not PromptTranslatorPage)
                         ContentFrame.Navigate(typeof(PromptTranslatorPage), null, transition);

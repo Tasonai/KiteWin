@@ -1,4 +1,5 @@
 using KiteWin.Core;
+using KiteWin.Core.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -82,6 +83,11 @@ public sealed partial class ItemsPage : Page
         TitleBox.SelectAll();
     }
 
+    private void OnQuickCapture(object sender, RoutedEventArgs e)
+    {
+        App.MainWindow.QuickCapture.ShowAndFocus();
+    }
+
     private void OnDelete(object sender, RoutedEventArgs e)
     {
         if (Model.Selection is { } item) Model.Delete(item);
@@ -134,6 +140,56 @@ public sealed partial class ItemsPage : Page
         if (Model.Selection is { } item && StyleCombo.SelectedItem is ComboBoxItem cbi && cbi.Content is string style)
         {
             item.Style = style;
+        }
+    }
+
+    private async void OnGenerateAiSpec(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+
+        GenerateAiBtn.IsEnabled = false;
+        AiProgressRing.IsActive = true;
+        AiProgressRing.Visibility = Visibility.Visible;
+        AiIcon.Visibility = Visibility.Collapsed;
+        AiBtnText.Text = "Генерация...";
+
+        try
+        {
+            var provider = Prefs.Current.AiProvider switch
+            {
+                "Local Ollama" => AiProvider.Ollama,
+                "Local Blueprint (Offline)" => AiProvider.Offline,
+                _ => AiProvider.Gemini
+            };
+
+            var settings = new AiSettings
+            {
+                Provider = provider,
+                GeminiApiKey = Prefs.Current.GeminiApiKey,
+                GeminiModel = Prefs.Current.GeminiModel,
+                OllamaEndpoint = Prefs.Current.OllamaEndpoint,
+                OllamaModel = Prefs.Current.OllamaModel
+            };
+
+            using var aiService = new AiService();
+            var spec = await aiService.GenerateSpecificationAsync(item, settings);
+            item.GeneratedPrompt = spec;
+            item.StitchPrompt = spec;
+            Model.Store.Save(item);
+
+            ShowBanner("AI-спецификация успешно сформирована!", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowBanner($"Ошибка генерации: {ex.Message}", InfoBarSeverity.Error);
+        }
+        finally
+        {
+            GenerateAiBtn.IsEnabled = true;
+            AiProgressRing.IsActive = false;
+            AiProgressRing.Visibility = Visibility.Collapsed;
+            AiIcon.Visibility = Visibility.Visible;
+            AiBtnText.Text = "Сгенерировать AI-спецификацию";
         }
     }
 

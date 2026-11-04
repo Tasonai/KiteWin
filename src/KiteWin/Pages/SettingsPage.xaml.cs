@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using KiteWin.Core.Services;
 using KiteWin.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -52,6 +53,9 @@ public sealed partial class SettingsPage : Page
         };
         AiProviderBox.SelectedIndex = providerIndex;
 
+        GeminiModelBox.SelectedIndex = Prefs.Current.GeminiModel.Contains("pro") ? 1 : 0;
+        OllamaEndpointBox.Text = Prefs.Current.OllamaEndpoint;
+
         // Version & Info
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         AboutCard.Description = $"Версия {version?.Split('+')[0] ?? "1.0.0"}. Все данные хранятся локально в SQLite WAL.";
@@ -101,6 +105,69 @@ public sealed partial class SettingsPage : Page
         if (_loading) return;
         Prefs.Current.GeminiApiKey = GeminiApiKeyBox.Password.Trim();
         if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnGeminiModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || GeminiModelBox.SelectedItem is not ComboBoxItem item) return;
+        Prefs.Current.GeminiModel = item.Tag as string ?? "gemini-2.5-flash";
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnOllamaEndpointChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.OllamaEndpoint = OllamaEndpointBox.Text.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private async void OnTestAiConnection(object sender, RoutedEventArgs e)
+    {
+        TestAiBtn.IsEnabled = false;
+        AiTestStatusText.Text = "Проверка...";
+        AiTestStatusText.Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+
+        try
+        {
+            var provider = Prefs.Current.AiProvider switch
+            {
+                "ollama" => AiProvider.Ollama,
+                "offline" => AiProvider.Offline,
+                _ => AiProvider.Gemini
+            };
+
+            var settings = new AiSettings
+            {
+                Provider = provider,
+                GeminiApiKey = Prefs.Current.GeminiApiKey,
+                GeminiModel = Prefs.Current.GeminiModel,
+                OllamaEndpoint = Prefs.Current.OllamaEndpoint,
+                OllamaModel = Prefs.Current.OllamaModel
+            };
+
+            using var aiService = new AiService();
+            var success = await aiService.TestConnectionAsync(settings);
+
+            if (success)
+            {
+                AiTestStatusText.Text = "Связь установлена (OK)";
+                AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"];
+            }
+            else
+            {
+                AiTestStatusText.Text = "Не удалось подключиться";
+                AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
+            }
+        }
+        catch (Exception ex)
+        {
+            AiTestStatusText.Text = $"Ошибка: {ex.Message}";
+            AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
+        }
+        finally
+        {
+            TestAiBtn.IsEnabled = true;
+        }
     }
 
     private void OnOpenDataFolder(object sender, RoutedEventArgs e)

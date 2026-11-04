@@ -28,6 +28,22 @@ internal static partial class Win32
     public const uint PW_RENDERFULLCONTENT = 2;
     public const uint ES_CONTINUOUS = 0x80000000, ES_DISPLAY_REQUIRED = 0x00000002, ES_SYSTEM_REQUIRED = 0x00000001;
 
+    public const uint MOD_ALT = 0x0001;
+    public const uint MOD_CONTROL = 0x0002;
+    public const uint MOD_SHIFT = 0x0004;
+    public const uint MOD_WIN = 0x0008;
+    public const uint MOD_NOREPEAT = 0x4000;
+    public const uint WM_HOTKEY = 0x0312;
+    public const uint WM_CLOSE = 0x0010;
+
+    public delegate nint SUBCLASSPROC(nint hWnd, uint uMsg, nuint wParam, nint lParam, nuint uIdSubclass, nuint dwRefData);
+
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool RegisterHotKey(nint hwnd, int id, uint fsModifiers, uint vk);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool UnregisterHotKey(nint hwnd, int id);
+    [LibraryImport("comctl32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool SetWindowSubclass(nint hwnd, SUBCLASSPROC pfnSubclass, nuint uIdSubclass, nuint dwRefData);
+    [LibraryImport("comctl32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool RemoveWindowSubclass(nint hwnd, SUBCLASSPROC pfnSubclass, nuint uIdSubclass);
+    [LibraryImport("comctl32.dll")] public static partial nint DefSubclassProc(nint hwnd, uint uMsg, nuint wParam, nint lParam);
+
     [LibraryImport("user32.dll")] public static partial uint GetDpiForWindow(nint hwnd);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetWindowRect(nint hwnd, out RECT rect);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool PrintWindow(nint hwnd, nint hdc, uint flags);

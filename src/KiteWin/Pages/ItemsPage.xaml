@@ -51,6 +51,14 @@
                         <KeyboardAccelerator Key="R" Modifiers="Control" />
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
+                <AppBarButton x:Name="QuickCaptureButton" Click="OnQuickCapture" Label="Быстрый захват">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE70F;" />
+                    </AppBarButton.Icon>
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="K" Modifiers="Control,Shift" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
                 <AppBarButton x:Name="NewButton" Click="OnNew" Icon="Add" Label="Новая идея">
                     <AppBarButton.KeyboardAccelerators>
                         <KeyboardAccelerator Key="N" Modifiers="Control" />
@@ -272,11 +280,21 @@
                             <!-- Action Command Buttons -->
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpaceMd}">
                                 <Button
-                                    Click="OnCompilePrompt"
+                                    x:Name="GenerateAiBtn"
+                                    Click="OnGenerateAiSpec"
                                     Style="{StaticResource AccentButtonStyle}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing x:Name="AiProgressRing" Width="14" Height="14" IsActive="False" Visibility="Collapsed" />
+                                        <FontIcon x:Name="AiIcon" Glyph="&#xE945;" FontSize="14" />
+                                        <TextBlock x:Name="AiBtnText" Text="Сгенерировать AI-спецификацию" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button
+                                    Click="OnCompilePrompt">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon Glyph="&#xE70F;" FontSize="14" />
-                                        <TextBlock Text="Скомпилировать Stitch промпт" />
+                                        <TextBlock Text="Скомпилировать Stitch" />
                                     </StackPanel>
                                 </Button>
 

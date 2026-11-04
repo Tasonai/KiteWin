@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using KiteWin.Core.Models;
 
 namespace KiteWin.Core.Sync;
 
@@ -15,13 +16,15 @@ public sealed class KiteSyncServer : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _listenTask;
     private readonly ItemStore _store;
+    private readonly CanvasStore? _canvasStore;
 
     public int Port { get; private set; }
     public bool IsRunning => _listener?.IsListening == true;
 
-    public KiteSyncServer(ItemStore store, int port = 24243)
+    public KiteSyncServer(ItemStore store, CanvasStore? canvasStore = null, int port = 24243)
     {
         _store = store;
+        _canvasStore = canvasStore;
         Port = port;
     }
 
@@ -171,6 +174,31 @@ public sealed class KiteSyncServer : IDisposable
                         }
 
                         var responseObj = new { status = "ok", imported = count };
+                        await WriteJsonResponseAsync(res, responseObj);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/canvas":
+                    if (req.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var json = _canvasStore?.GetSnapshotJson() ?? "{}";
+                        res.ContentType = "application/json; charset=utf-8";
+                        res.StatusCode = (int)HttpStatusCode.OK;
+                        var bytes = Encoding.UTF8.GetBytes(json);
+                        await res.OutputStream.WriteAsync(bytes);
+                        res.Close();
+                    }
+                    else if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        var success = _canvasStore?.ImportSnapshot(json) ?? false;
+                        var responseObj = new { status = success ? "ok" : "error" };
                         await WriteJsonResponseAsync(res, responseObj);
                     }
                     else

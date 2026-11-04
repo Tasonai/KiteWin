@@ -101,6 +101,37 @@
                             PasswordChanged="OnGeminiKeyChanged"
                             PlaceholderText="AIzaSy..." />
                     </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Выбор модели Gemini 2.5 (Flash для быстрого отклика, Pro для сложной логики)." Header="Модель Gemini">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE945;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ComboBox x:Name="GeminiModelBox" MinWidth="240" SelectionChanged="OnGeminiModelChanged">
+                            <ComboBoxItem Content="gemini-2.5-flash (Рекомендуется)" Tag="gemini-2.5-flash" />
+                            <ComboBoxItem Content="gemini-2.5-pro (Глубокий анализ)" Tag="gemini-2.5-pro" />
+                        </ComboBox>
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Локальный эндпоинт Ollama для автономной работы без интернета." Header="Эндпоинт Ollama">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE753;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <TextBox
+                            x:Name="OllamaEndpointBox"
+                            MinWidth="240"
+                            PlaceholderText="http://localhost:11434/api/generate"
+                            TextChanged="OnOllamaEndpointChanged" />
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Проверка доступности выбранного AI-провайдера (Gemini или Ollama)." Header="Диагностика связи с AI">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE950;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Name="AiTestStatusText" VerticalAlignment="Center" FontSize="12" />
+                            <Button x:Name="TestAiBtn" Click="OnTestAiConnection" Content="Проверить связь" />
+                        </StackPanel>
+                    </toolkit:SettingsCard>
                 </StackPanel>
 
                 <!-- About Section -->
