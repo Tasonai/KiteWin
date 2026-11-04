@@ -103,10 +103,10 @@ Kite features automatic bidirectional synchronization without external cloud dep
 
 ### SHA256 Checksums
 ```text
-2e8ddd56f9066c96f1c49ac3e2a1bc9cffa29171173db72e354fc8f1baadbc5f  Kite-1.0.0-macOS.dmg
+b9dd9362493547dd1d17690bda4506a53011e9e392fec40854a4eb3595464535  Kite-1.0.0-macOS.dmg
 42def6372226e766207084d6ac3949b3b039d2ea1bfe51c13e5336e49f95b441  Kite-1.0.0-macOS.zip
-ecf68dccabfdf55b33c0ffc991579f342814ad28c370f1b72c4874b74ac5e99d  KiteWin-1.0.0-Setup.exe
-b15f287f1349df624f8a508800ff8c57acea24f32d97d86add276b0c9d9ec5ab  KiteWin-1.0.0-win-x64.zip
+cfd9dad5f13b2c19b4da6c9923637c42e710a01b93c829d0b139fb3a410b6f07  KiteWin-1.0.0-Setup.exe
+f533b31b14320fad4c3e2177f3db87952363e9f2e9fa499c23ebc67a3d031779  KiteWin-1.0.0-win-x64.zip
 ```
 
 ### Quality Assurance Verification
