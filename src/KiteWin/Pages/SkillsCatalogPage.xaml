@@ -44,7 +44,7 @@
 
             <TextBox
                 x:Name="SearchBox"
-                PlaceholderText="Поиск по скиллам (@emil-design-eng), плагинам, тегам и описанию..."
+                PlaceholderText="Поиск по скиллам (/emil-design-eng), плагинам, тегам и описанию..."
                 TextChanged="OnSearchTextChanged">
                 <TextBox.Header>
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -209,7 +209,7 @@
                                         FontSize="13"
                                         FontWeight="SemiBold"
                                         Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                        Text="@emil-design-eng" />
+                                        Text="/emil-design-eng" />
                                     <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="•" />
                                     <TextBlock
                                         x:Name="DetailSkillCategory"

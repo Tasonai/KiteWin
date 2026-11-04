@@ -133,7 +133,7 @@ public sealed partial class SkillsCatalogPage : Page
     private void DisplaySkillDetails(AntigravitySkillInfo skill)
     {
         DetailSkillName.Text = skill.Name;
-        DetailSkillCommand.Text = $"@{skill.Name}";
+        DetailSkillCommand.Text = $"/{skill.Name}";
         DetailSkillCategory.Text = skill.Category;
 
         if (!string.IsNullOrEmpty(skill.PluginId))
@@ -197,7 +197,7 @@ public sealed partial class SkillsCatalogPage : Page
         if (_selectedSkill != null)
         {
             var package = new DataPackage();
-            package.SetText($"@{_selectedSkill.Name}");
+            package.SetText($"/{_selectedSkill.Name}");
             Clipboard.SetContent(package);
         }
         else if (_selectedPlugin != null)
