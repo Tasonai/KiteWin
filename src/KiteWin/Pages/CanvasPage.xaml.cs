@@ -417,6 +417,33 @@ public sealed partial class CanvasPage : Page
         ShowToast("DESIGN.md скопирован в буфер обмена для Google Stitch");
     }
 
+    private void OnExportHtmlClicked(object sender, RoutedEventArgs e)
+    {
+        var html = CanvasExporter.ExportHtml(_store.Snapshot, Model.Items);
+        var pkg = new DataPackage();
+        pkg.SetText(html);
+        Clipboard.SetContent(pkg);
+        ShowToast("Интерактивный HTML скопирован в буфер обмена");
+    }
+
+    private void OnExportSvgClicked(object sender, RoutedEventArgs e)
+    {
+        var svg = CanvasExporter.ExportSvg(_store.Snapshot, Model.Items);
+        var pkg = new DataPackage();
+        pkg.SetText(svg);
+        Clipboard.SetContent(pkg);
+        ShowToast("Векторный SVG скопирован в буфер обмена");
+    }
+
+    private void OnExportMermaidClicked(object sender, RoutedEventArgs e)
+    {
+        var mmd = CanvasExporter.ExportMermaid(_store.Snapshot, Model.Items);
+        var pkg = new DataPackage();
+        pkg.SetText(mmd);
+        Clipboard.SetContent(pkg);
+        ShowToast("Диаграмма Mermaid скопирована в буфер обмена");
+    }
+
     private void OnExportFigmaClicked(object sender, RoutedEventArgs e)
     {
         var json = DesignExporter.GenerateFigmaTokensJson(

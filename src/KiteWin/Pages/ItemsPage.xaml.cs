@@ -155,10 +155,11 @@ public sealed partial class ItemsPage : Page
 
         try
         {
-            var provider = Prefs.Current.AiProvider switch
+            var provider = Prefs.Current.AiProvider.ToLowerInvariant() switch
             {
-                "Local Ollama" => AiProvider.Ollama,
-                "Local Blueprint (Offline)" => AiProvider.Offline,
+                "openai" or "openai compatible" => AiProvider.OpenAI,
+                "ollama" or "local ollama" => AiProvider.Ollama,
+                "offline" or "local blueprint (offline)" => AiProvider.Offline,
                 _ => AiProvider.Gemini
             };
 
@@ -167,6 +168,9 @@ public sealed partial class ItemsPage : Page
                 Provider = provider,
                 GeminiApiKey = Prefs.Current.GeminiApiKey,
                 GeminiModel = Prefs.Current.GeminiModel,
+                OpenAIEndpoint = Prefs.Current.OpenAIEndpoint,
+                OpenAIApiKey = Prefs.Current.OpenAIApiKey,
+                OpenAIModel = Prefs.Current.OpenAIModel,
                 OllamaEndpoint = Prefs.Current.OllamaEndpoint,
                 OllamaModel = Prefs.Current.OllamaModel
             };

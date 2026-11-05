@@ -72,6 +72,22 @@
                     <DropDownButton Content="Экспорт">
                         <DropDownButton.Flyout>
                             <MenuFlyout>
+                                <MenuFlyoutItem Text="Интерактивный HTML (.html)" Click="OnExportHtmlClicked">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE774;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutItem Text="Векторный SVG (.svg)" Click="OnExportSvgClicked">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE943;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutItem Text="Диаграмма Mermaid (.mmd)" Click="OnExportMermaidClicked">
+                                    <MenuFlyoutItem.Icon>
+                                        <FontIcon Glyph="&#xE8BD;" />
+                                    </MenuFlyoutItem.Icon>
+                                </MenuFlyoutItem>
+                                <MenuFlyoutSeparator />
                                 <MenuFlyoutItem Text="В Google Stitch (DESIGN.md)" Click="OnExportStitchClicked">
                                     <MenuFlyoutItem.Icon>
                                         <FontIcon Glyph="&#xE72D;" />

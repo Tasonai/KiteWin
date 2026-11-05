@@ -37,6 +37,7 @@
             <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" IsOpen="False">
                 <AppBarButton Click="OnCopyOutput" Icon="Copy" Label="Скопировать" />
                 <AppBarButton Click="OnSaveToIdeas" Icon="Save" Label="Сохранить в идеи" />
+                <AppBarButton Click="OnScaffoldProjectClick" Icon="Folder" Label="Экспорт проекта" />
             </CommandBar>
         </Grid>
 

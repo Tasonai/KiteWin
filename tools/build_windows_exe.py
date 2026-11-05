@@ -5,7 +5,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist")
 os.makedirs(DIST, exist_ok=True)
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 print("1. Creating application payload zip...")
 payload_io = io.BytesIO()
@@ -100,7 +100,7 @@ function Install-KiteWinCore {
     $reg = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\KiteWin"
     if (-not (Test-Path $reg)) { New-Item -Path $reg -Force | Out-Null }
     Set-ItemProperty -Path $reg -Name "DisplayName" -Value "KiteWin 1.1 (AI Studio)"
-    Set-ItemProperty -Path $reg -Name "DisplayVersion" -Value "1.1.0"
+    Set-ItemProperty -Path $reg -Name "DisplayVersion" -Value "1.2.0"
     Set-ItemProperty -Path $reg -Name "Publisher" -Value "Antigravity Team"
     Set-ItemProperty -Path $reg -Name "InstallLocation" -Value $installDir
     if (Test-Path $icon) { Set-ItemProperty -Path $reg -Name "DisplayIcon" -Value "$icon,0" }

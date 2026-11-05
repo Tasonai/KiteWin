@@ -8,6 +8,7 @@ namespace KiteWin.Core.Services;
 public enum AiProvider
 {
     Gemini,
+    OpenAI,
     Ollama,
     Offline
 }
@@ -17,6 +18,9 @@ public sealed class AiSettings
     public AiProvider Provider { get; set; } = AiProvider.Gemini;
     public string GeminiApiKey { get; set; } = "";
     public string GeminiModel { get; set; } = "gemini-3.5-flash";
+    public string OpenAIEndpoint { get; set; } = "https://api.deepseek.com/v1/chat/completions";
+    public string OpenAIApiKey { get; set; } = "";
+    public string OpenAIModel { get; set; } = "deepseek-chat";
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
     public string OllamaModel { get; set; } = "llama3";
     public bool InterviewEnabled { get; set; } = true;
@@ -125,6 +129,19 @@ public sealed class AiService : IAiService, IDisposable
             }
         }
 
+        if (settings.Provider == AiProvider.OpenAI)
+        {
+            try
+            {
+                return await CallOpenAIGenerateAsync(finalPrompt, settings, ct);
+            }
+            catch (Exception ex)
+            {
+                var offline = GenerateOfflineBlueprint(item);
+                return $"<!-- Предупреждение OpenAI/DeepSeek: {ex.Message} (использован локальный компилятор) -->\n\n" + offline;
+            }
+        }
+
         if (settings.Provider == AiProvider.Ollama)
         {
             try
@@ -179,12 +196,17 @@ public sealed class AiService : IAiService, IDisposable
             return await CallGeminiChatAsync(messages, systemInstruction, settings, cleanKey, ct);
         }
 
+        if (settings.Provider == AiProvider.OpenAI)
+        {
+            return await CallOpenAIChatAsync(messages, systemInstruction, settings, ct);
+        }
+
         if (settings.Provider == AiProvider.Ollama)
         {
             return await CallOllamaChatAsync(messages, systemInstruction, settings, ct);
         }
 
-        return "Офлайн-режим: укажите ключ Gemini в настройках приложения для общения с AI-Архитектором.";
+        return "Офлайн-режим: укажите ключ Gemini или OpenAI в настройках приложения для общения с AI-Архитектором.";
     }
 
     public async Task<bool> TestConnectionAsync(AiSettings settings, CancellationToken ct = default)
@@ -219,6 +241,24 @@ public sealed class AiService : IAiService, IDisposable
                     if (status == 400 || status == 401 || status == 403) return false;
                 }
                 return false;
+            }
+
+            if (settings.Provider == AiProvider.OpenAI)
+            {
+                var body = new
+                {
+                    model = string.IsNullOrWhiteSpace(settings.OpenAIModel) ? "deepseek-chat" : settings.OpenAIModel,
+                    messages = new[] { new { role = "user", content = "Ping" } },
+                    max_tokens = 5
+                };
+                using var req = new HttpRequestMessage(HttpMethod.Post, settings.OpenAIEndpoint);
+                if (!string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
+                {
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.OpenAIApiKey.Trim());
+                }
+                req.Content = JsonContent.Create(body);
+                using var res = await _http.SendAsync(req, ct);
+                return res.IsSuccessStatusCode;
             }
 
             if (settings.Provider == AiProvider.Ollama)
@@ -525,6 +565,81 @@ public sealed class AiService : IAiService, IDisposable
             msgProp.TryGetProperty("content", out var contentProp))
         {
             return contentProp.GetString() ?? "";
+        }
+        return "";
+    }
+
+    private async Task<string> CallOpenAIGenerateAsync(string prompt, AiSettings settings, CancellationToken ct)
+    {
+        var body = new
+        {
+            model = string.IsNullOrWhiteSpace(settings.OpenAIModel) ? "deepseek-chat" : settings.OpenAIModel,
+            messages = new[] { new { role = "user", content = prompt } },
+            temperature = 0.7
+        };
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, settings.OpenAIEndpoint);
+        if (!string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
+        {
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.OpenAIApiKey.Trim());
+        }
+        req.Content = JsonContent.Create(body);
+
+        using var res = await _http.SendAsync(req, ct);
+        res.EnsureSuccessStatusCode();
+
+        using var doc = await JsonDocument.ParseAsync(await res.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+        {
+            var choice = choices[0];
+            if (choice.TryGetProperty("message", out var msg) && msg.TryGetProperty("content", out var content))
+            {
+                return content.GetString() ?? "";
+            }
+        }
+        return "";
+    }
+
+    private async Task<string> CallOpenAIChatAsync(
+        IReadOnlyList<(string Role, string Content)> messages,
+        string systemInstruction,
+        AiSettings settings,
+        CancellationToken ct)
+    {
+        var apiMessages = new List<object>
+        {
+            new { role = "system", content = systemInstruction }
+        };
+        foreach (var m in messages)
+        {
+            apiMessages.Add(new { role = m.Role, content = m.Content });
+        }
+
+        var body = new
+        {
+            model = string.IsNullOrWhiteSpace(settings.OpenAIModel) ? "deepseek-chat" : settings.OpenAIModel,
+            messages = apiMessages,
+            temperature = 0.7
+        };
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, settings.OpenAIEndpoint);
+        if (!string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
+        {
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.OpenAIApiKey.Trim());
+        }
+        req.Content = JsonContent.Create(body);
+
+        using var res = await _http.SendAsync(req, ct);
+        res.EnsureSuccessStatusCode();
+
+        using var doc = await JsonDocument.ParseAsync(await res.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+        {
+            var choice = choices[0];
+            if (choice.TryGetProperty("message", out var msg) && msg.TryGetProperty("content", out var content))
+            {
+                return content.GetString() ?? "";
+            }
         }
         return "";
     }

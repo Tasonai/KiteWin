@@ -45,10 +45,11 @@ public sealed partial class SettingsPage : Page
 
         // AI Provider
         GeminiApiKeyBox.Password = Prefs.Current.GeminiApiKey;
-        var providerIndex = Prefs.Current.AiProvider switch
+        var providerIndex = Prefs.Current.AiProvider.ToLowerInvariant() switch
         {
-            "ollama" => 1,
-            "offline" => 2,
+            "openai" => 1,
+            "ollama" => 2,
+            "offline" => 3,
             _ => 0
         };
         AiProviderBox.SelectedIndex = providerIndex;
@@ -61,6 +62,9 @@ public sealed partial class SettingsPage : Page
         };
         InterviewToggleSwitch.IsOn = Prefs.Current.TranslatorInterview;
         OllamaEndpointBox.Text = Prefs.Current.OllamaEndpoint;
+        OpenAIEndpointBox.Text = Prefs.Current.OpenAIEndpoint;
+        OpenAIApiKeyBox.Password = Prefs.Current.OpenAIApiKey;
+        OpenAIModelBox.Text = Prefs.Current.OpenAIModel;
 
         // Version & Info
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -134,6 +138,27 @@ public sealed partial class SettingsPage : Page
         if (!AppPaths.IsOverridden) Prefs.Current.Save();
     }
 
+    private void OnOpenAIEndpointChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.OpenAIEndpoint = OpenAIEndpointBox.Text.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnOpenAIKeyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.OpenAIApiKey = OpenAIApiKeyBox.Password.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnOpenAIModelChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.OpenAIModel = OpenAIModelBox.Text.Trim();
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
     private async void OnTestAiConnection(object sender, RoutedEventArgs e)
     {
         TestAiBtn.IsEnabled = false;
@@ -142,8 +167,9 @@ public sealed partial class SettingsPage : Page
 
         try
         {
-            var provider = Prefs.Current.AiProvider switch
+            var provider = Prefs.Current.AiProvider.ToLowerInvariant() switch
             {
+                "openai" => AiProvider.OpenAI,
                 "ollama" => AiProvider.Ollama,
                 "offline" => AiProvider.Offline,
                 _ => AiProvider.Gemini
@@ -154,6 +180,9 @@ public sealed partial class SettingsPage : Page
                 Provider = provider,
                 GeminiApiKey = Prefs.Current.GeminiApiKey,
                 GeminiModel = Prefs.Current.GeminiModel,
+                OpenAIEndpoint = Prefs.Current.OpenAIEndpoint,
+                OpenAIApiKey = Prefs.Current.OpenAIApiKey,
+                OpenAIModel = Prefs.Current.OpenAIModel,
                 OllamaEndpoint = Prefs.Current.OllamaEndpoint,
                 OllamaModel = Prefs.Current.OllamaModel
             };

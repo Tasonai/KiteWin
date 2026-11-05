@@ -3,9 +3,9 @@
     <!-- Build products live outside the repo (and outside OneDrive, which would try to sync them).
          One folder per checkout, named after it, so agents in separate git worktrees never share build output. -->
     <ArtifactsPath>$(LOCALAPPDATA)\Dev\KiteWin\$([System.IO.Path]::GetFileName($(MSBuildThisFileDirectory.TrimEnd('\'))))</ArtifactsPath>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

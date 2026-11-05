@@ -261,8 +261,9 @@ public sealed partial class PromptTranslatorPage : Page
 
     private static AiSettings CreateAiSettings()
     {
-        var provider = Prefs.Current.AiProvider switch
+        var provider = Prefs.Current.AiProvider.ToLowerInvariant() switch
         {
+            "openai" or "openai compatible" => AiProvider.OpenAI,
             "ollama" => AiProvider.Ollama,
             "offline" => AiProvider.Offline,
             _ => AiProvider.Gemini
@@ -273,6 +274,9 @@ public sealed partial class PromptTranslatorPage : Page
             Provider = provider,
             GeminiApiKey = Prefs.Current.GeminiApiKey,
             GeminiModel = Prefs.Current.GeminiModel,
+            OpenAIEndpoint = Prefs.Current.OpenAIEndpoint,
+            OpenAIApiKey = Prefs.Current.OpenAIApiKey,
+            OpenAIModel = Prefs.Current.OpenAIModel,
             OllamaEndpoint = Prefs.Current.OllamaEndpoint,
             OllamaModel = Prefs.Current.OllamaModel,
             InterviewEnabled = Prefs.Current.TranslatorInterview
@@ -396,6 +400,48 @@ public sealed partial class PromptTranslatorPage : Page
                 StyleBox.SelectedIndex = i;
                 break;
             }
+        }
+    }
+
+    private async void OnScaffoldProjectClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.FileTypeFilter.Add("*");
+
+            var hwnd = Win32.GetActiveWindow();
+            if (hwnd == 0) hwnd = Win32.GetForegroundWindow();
+            if (hwnd != 0) WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+            {
+                var item = CreateCurrentItem();
+                var result = ProjectScaffolder.Scaffold(
+                    parentFolder: folder.Path,
+                    title: item.Title,
+                    concept: item.Concept,
+                    platform: item.Platform,
+                    style: item.Style,
+                    planPrompt: OutputTextBox.Text
+                );
+                ShowBanner($"Проект успешно создан в {result.Directory} ({result.Files.Count} файлов, включая .planning/)", InfoBarSeverity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Projects");
+            var item = CreateCurrentItem();
+            var result = ProjectScaffolder.Scaffold(
+                parentFolder: baseDir,
+                title: item.Title,
+                concept: item.Concept,
+                platform: item.Platform,
+                style: item.Style,
+                planPrompt: OutputTextBox.Text
+            );
+            ShowBanner($"Проект создан в {result.Directory} ({result.Files.Count} файлов): {ex.Message}", InfoBarSeverity.Informational);
         }
     }
 

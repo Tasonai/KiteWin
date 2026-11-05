@@ -86,6 +86,7 @@
                         </toolkit:SettingsCard.HeaderIcon>
                         <ComboBox x:Name="AiProviderBox" MinWidth="200" SelectionChanged="OnAiProviderChanged">
                             <ComboBoxItem Content="Google Gemini API (3.5 Flash / Lite)" Tag="gemini" />
+                            <ComboBoxItem Content="OpenAI / DeepSeek / OpenRouter" Tag="openai" />
                             <ComboBoxItem Content="Локальная нейросеть Ollama" Tag="ollama" />
                             <ComboBoxItem Content="Офлайн-компилятор Stitch (без API)" Tag="offline" />
                         </ComboBox>
@@ -129,6 +130,39 @@
                             MinWidth="240"
                             PlaceholderText="http://localhost:11434/api/generate"
                             TextChanged="OnOllamaEndpointChanged" />
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Эндпоинт для OpenAI-совместимых моделей (DeepSeek, OpenRouter, LM Studio)." Header="OpenAI / DeepSeek Эндпоинт">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE774;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <TextBox
+                            x:Name="OpenAIEndpointBox"
+                            MinWidth="240"
+                            PlaceholderText="https://api.deepseek.com/v1/chat/completions"
+                            TextChanged="OnOpenAIEndpointChanged" />
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Ключ авторизации для DeepSeek, OpenRouter или OpenAI." Header="OpenAI API Key">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE8D7;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <PasswordBox
+                            x:Name="OpenAIApiKeyBox"
+                            MinWidth="240"
+                            PasswordChanged="OnOpenAIKeyChanged"
+                            PlaceholderText="sk-..." />
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Имя модели (например: deepseek-chat, deepseek-reasoner, llama-3.3-70b)." Header="Имя модели OpenAI">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE945;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <TextBox
+                            x:Name="OpenAIModelBox"
+                            MinWidth="240"
+                            PlaceholderText="deepseek-chat"
+                            TextChanged="OnOpenAIModelChanged" />
                     </toolkit:SettingsCard>
 
                     <toolkit:SettingsCard Description="Проверка доступности выбранного AI-провайдера (Gemini или Ollama)." Header="Диагностика связи с AI">

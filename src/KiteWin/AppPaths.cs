@@ -45,6 +45,9 @@ public sealed class Prefs
     public bool TranslatorInterview { get; set; } = true;
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/api/generate";
     public string OllamaModel { get; set; } = "llama3";
+    public string OpenAIEndpoint { get; set; } = "https://api.deepseek.com/v1/chat/completions";
+    public string OpenAIApiKey { get; set; } = "";
+    public string OpenAIModel { get; set; } = "deepseek-chat";
 
     private static Prefs? _current;
     public static Prefs Current => _current ??= Load();
