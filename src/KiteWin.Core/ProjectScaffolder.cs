@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace KiteWin.Core;
 
-public sealed record ScaffoldResult(string Directory, IReadOnlyList<string> Files);
+public sealed record ScaffoldResult(string Directory, IReadOnlyList<string> Files, string GitMessage = "");
 
 /// <summary>
 /// Scaffolds a complete project constitution ready for Antigravity agents,
@@ -24,7 +24,8 @@ public static class ProjectScaffolder
         string concept,
         string platform,
         string style,
-        string planPrompt)
+        string planPrompt,
+        bool createGitBranch = false)
     {
         var folderName = Slugify(title);
         var projectDir = Path.Combine(parentFolder, folderName);
@@ -204,6 +205,53 @@ public static class ProjectScaffolder
         File.WriteAllText(Path.Combine(projectDir, ".gitignore"), gitignore, Encoding.UTF8);
         createdFiles.Add(".gitignore");
 
-        return new ScaffoldResult(projectDir, createdFiles);
+        var gitMsg = "";
+        if (createGitBranch)
+        {
+            var res = InitializeGitFeature(projectDir, $"feature/kite-{folderName}", $"feat: scaffold planning specs for {title}");
+            gitMsg = res.Message;
+        }
+
+        return new ScaffoldResult(projectDir, createdFiles, gitMsg);
+    }
+
+    public static (bool Success, string Message) InitializeGitFeature(
+        string projectDir,
+        string? branchName = null,
+        string? commitMessage = null)
+    {
+        var folderName = Path.GetFileName(projectDir);
+        var branch = branchName ?? $"feature/kite-{folderName}";
+        var commitMsg = commitMessage ?? $"feat: scaffold planning specs for {folderName}";
+
+        string RunGit(string args)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("git", args)
+                {
+                    WorkingDirectory = projectDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = System.Diagnostics.Process.Start(psi);
+                if (proc == null) return "error";
+                var output = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+                proc.WaitForExit(3000);
+                return output;
+            }
+            catch (Exception ex)
+            {
+                return $"error: {ex.Message}";
+            }
+        }
+
+        RunGit("init");
+        RunGit($"checkout -B {branch}");
+        RunGit("add .");
+        RunGit($"commit -m \"{commitMsg}\"");
+        return (true, $"Git branch '{branch}' ready with initial planning specs");
     }
 }

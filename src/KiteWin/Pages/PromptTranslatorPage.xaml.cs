@@ -424,7 +424,8 @@ public sealed partial class PromptTranslatorPage : Page
                     concept: item.Concept,
                     platform: item.Platform,
                     style: item.Style,
-                    planPrompt: OutputTextBox.Text
+                    planPrompt: OutputTextBox.Text,
+                    createGitBranch: true
                 );
                 ShowBanner($"Проект успешно создан в {result.Directory} ({result.Files.Count} файлов, включая .planning/)", InfoBarSeverity.Success);
             }

@@ -17,6 +17,8 @@ public sealed class KiteSyncServer : IDisposable
     private Task? _listenTask;
     private readonly ItemStore _store;
     private readonly CanvasStore? _canvasStore;
+    private readonly List<HttpListenerResponse> _sseClients = [];
+    private readonly object _sseLock = new();
 
     public int Port { get; private set; }
     public bool IsRunning => _listener?.IsListening == true;
@@ -68,6 +70,15 @@ public sealed class KiteSyncServer : IDisposable
 
         try
         {
+            lock (_sseLock)
+            {
+                foreach (var client in _sseClients)
+                {
+                    try { client.Close(); } catch { }
+                }
+                _sseClients.Clear();
+            }
+
             _cts?.Cancel();
             _listener?.Stop();
             _listener?.Close();
@@ -80,6 +91,30 @@ public sealed class KiteSyncServer : IDisposable
         {
             _listener = null;
             _cts = null;
+        }
+    }
+
+    public void Broadcast(string eventType, object? payload = null)
+    {
+        var json = JsonSerializer.Serialize(new { type = eventType, payload });
+        var msg = $"event: message\ndata: {json}\n\n";
+        var bytes = Encoding.UTF8.GetBytes(msg);
+
+        lock (_sseLock)
+        {
+            for (var i = _sseClients.Count - 1; i >= 0; i--)
+            {
+                var client = _sseClients[i];
+                try
+                {
+                    client.OutputStream.Write(bytes);
+                    client.OutputStream.Flush();
+                }
+                catch
+                {
+                    _sseClients.RemoveAt(i);
+                }
+            }
         }
     }
 
@@ -130,6 +165,26 @@ public sealed class KiteSyncServer : IDisposable
 
             switch (path)
             {
+                case "" or "/" or "/index.html":
+                    var html = WebStudio.GetHtml(Port, "Kite Windows (BAWA)");
+                    res.ContentType = "text/html; charset=utf-8";
+                    res.StatusCode = (int)HttpStatusCode.OK;
+                    var htmlBytes = Encoding.UTF8.GetBytes(html);
+                    await res.OutputStream.WriteAsync(htmlBytes);
+                    res.Close();
+                    break;
+
+                case "/api/events":
+                    res.ContentType = "text/event-stream; charset=utf-8";
+                    res.Headers.Add("Cache-Control", "no-cache");
+                    res.Headers.Add("Connection", "keep-alive");
+                    res.StatusCode = (int)HttpStatusCode.OK;
+                    lock (_sseLock) { _sseClients.Add(res); }
+                    var welcomeBytes = Encoding.UTF8.GetBytes($"data: {{\"type\":\"connected\",\"app\":\"Kite Windows\",\"port\":{Port}}}\n\n");
+                    await res.OutputStream.WriteAsync(welcomeBytes);
+                    await res.OutputStream.FlushAsync();
+                    return;
+
                 case "/api/status":
                     var status = new KiteStatusResponse
                     {
@@ -174,6 +229,7 @@ public sealed class KiteSyncServer : IDisposable
                         }
 
                         var responseObj = new { status = "ok", imported = count };
+                        Broadcast("ideas_updated", new { imported = count });
                         await WriteJsonResponseAsync(res, responseObj);
                     }
                     else
@@ -198,6 +254,7 @@ public sealed class KiteSyncServer : IDisposable
                         using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
                         var json = await reader.ReadToEndAsync();
                         var success = _canvasStore?.ImportSnapshot(json) ?? false;
+                        if (success) Broadcast("canvas_updated", new { success = true });
                         var responseObj = new { status = success ? "ok" : "error" };
                         await WriteJsonResponseAsync(res, responseObj);
                     }
