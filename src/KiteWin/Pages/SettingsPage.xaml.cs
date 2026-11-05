@@ -53,7 +53,13 @@ public sealed partial class SettingsPage : Page
         };
         AiProviderBox.SelectedIndex = providerIndex;
 
-        GeminiModelBox.SelectedIndex = Prefs.Current.GeminiModel.Contains("pro") ? 1 : 0;
+        GeminiModelBox.SelectedIndex = Prefs.Current.GeminiModel switch
+        {
+            "gemini-3.1-flash-lite" => 1,
+            "gemini-flash-latest" => 2,
+            _ => 0
+        };
+        InterviewToggleSwitch.IsOn = Prefs.Current.TranslatorInterview;
         OllamaEndpointBox.Text = Prefs.Current.OllamaEndpoint;
 
         // Version & Info
@@ -110,7 +116,14 @@ public sealed partial class SettingsPage : Page
     private void OnGeminiModelChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || GeminiModelBox.SelectedItem is not ComboBoxItem item) return;
-        Prefs.Current.GeminiModel = item.Tag as string ?? "gemini-2.5-flash";
+        Prefs.Current.GeminiModel = item.Tag as string ?? "gemini-3.5-flash";
+        if (!AppPaths.IsOverridden) Prefs.Current.Save();
+    }
+
+    private void OnInterviewToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        Prefs.Current.TranslatorInterview = InterviewToggleSwitch.IsOn;
         if (!AppPaths.IsOverridden) Prefs.Current.Save();
     }
 

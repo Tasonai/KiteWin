@@ -1,6 +1,8 @@
 using KiteWin.Core;
+using KiteWin.Core.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace KiteWin.Pages;
@@ -8,6 +10,9 @@ namespace KiteWin.Pages;
 public sealed partial class PromptTranslatorPage : Page
 {
     private string _activeMode = "stitch";
+    private bool _isGenerating;
+    private IReadOnlyList<InterviewQuestion> _currentQuestions = Array.Empty<InterviewQuestion>();
+    private readonly Dictionary<string, string> _interviewAnswers = new(StringComparer.OrdinalIgnoreCase);
 
     public PromptTranslatorPage()
     {
@@ -25,6 +30,8 @@ public sealed partial class PromptTranslatorPage : Page
         {
             _activeMode = tag;
             TargetedEditPanel.Visibility = _activeMode == "targeted" ? Visibility.Visible : Visibility.Collapsed;
+            InterviewPanel.Visibility = Visibility.Collapsed;
+            _currentQuestions = Array.Empty<InterviewQuestion>();
             Compile();
         }
     }
@@ -34,20 +41,247 @@ public sealed partial class PromptTranslatorPage : Page
         UpdateDensityGauge();
     }
 
-    private void OnCompileClick(object sender, RoutedEventArgs e)
+    private async void OnCompileClick(object sender, RoutedEventArgs e)
     {
-        Compile();
-        ShowBanner("Промпт успешно скомпилирован по выбранному стандарту.", InfoBarSeverity.Success);
+        if (_isGenerating) return;
+
+        var item = CreateCurrentItem();
+        var key = Prefs.Current.GeminiApiKey.Trim();
+
+        var canAsk = Prefs.Current.TranslatorInterview
+            && (_activeMode == "plan" || _activeMode == "stitch")
+            && !string.IsNullOrEmpty(key)
+            && item.Concept.Trim().Length >= 8;
+
+        if (canAsk && _currentQuestions.Count == 0)
+        {
+            SetLoadingState(true, "Формулирую вопросы...");
+            try
+            {
+                using var ai = new AiService();
+                var settings = CreateAiSettings();
+                var questions = await ai.GenerateInterviewQuestionsAsync(item, settings);
+
+                if (questions.Count > 0)
+                {
+                    _currentQuestions = questions;
+                    RenderInterviewQuestions(questions);
+                    InterviewPanel.Visibility = Visibility.Visible;
+                    SetLoadingState(false);
+                    return;
+                }
+            }
+            catch
+            {
+                // Fall through to standard generation if question generation fails
+            }
+        }
+
+        await ExecuteAiCompilationAsync(withAnswers: false);
     }
 
-    private void Compile()
+    private async void OnSubmitInterviewClick(object sender, RoutedEventArgs e)
     {
-        var item = new Item(InputTitleBox?.Text ?? "Новая идея")
+        await ExecuteAiCompilationAsync(withAnswers: true);
+    }
+
+    private async void OnSkipInterviewClick(object sender, RoutedEventArgs e)
+    {
+        await ExecuteAiCompilationAsync(withAnswers: false);
+    }
+
+    private void OnOfflineCompileClick(object sender, RoutedEventArgs e)
+    {
+        InterviewPanel.Visibility = Visibility.Collapsed;
+        Compile();
+        ShowBanner("Скомпилировано локально по офлайн-шаблону (без API).", InfoBarSeverity.Informational);
+    }
+
+    private async Task ExecuteAiCompilationAsync(bool withAnswers)
+    {
+        if (_isGenerating) return;
+
+        InterviewPanel.Visibility = Visibility.Collapsed;
+        SetLoadingState(true, "Трансляция архитектуры...");
+
+        var item = CreateCurrentItem();
+        var key = Prefs.Current.GeminiApiKey.Trim();
+
+        if (string.IsNullOrEmpty(key) && Prefs.Current.AiProvider != "ollama")
+        {
+            Compile();
+            SetLoadingState(false);
+            ShowBanner("Ключ Gemini API не задан. Использован офлайн-шаблон.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            using var ai = new AiService();
+            var settings = CreateAiSettings();
+
+            var skills = new[]
+            {
+                "/enhance-prompt",
+                "/design-md",
+                "/taste-design",
+                "/emil-design-eng",
+                "/a11y-debugging",
+                "/gsd-execute-phase"
+            };
+
+            IReadOnlyList<(string Question, string Answer)>? answers = null;
+            if (withAnswers && _interviewAnswers.Count > 0)
+            {
+                answers = _interviewAnswers
+                    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                    .Select(kv => (kv.Key, kv.Value))
+                    .ToList();
+            }
+
+            var output = await ai.GenerateSpecificationAsync(item, settings, _activeMode, skills, answers);
+            OutputTextBox.Text = output;
+            UpdateDensityGauge();
+            ShowBanner("Инженерная спецификация успешно сформирована AI-моделью.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Compile();
+            ShowBanner($"Ошибка обращения к AI: {ex.Message}. Скомпилирован локальный шаблон.", InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _currentQuestions = Array.Empty<InterviewQuestion>();
+            _interviewAnswers.Clear();
+            SetLoadingState(false);
+        }
+    }
+
+    private void RenderInterviewQuestions(IReadOnlyList<InterviewQuestion> questions)
+    {
+        InterviewQuestionsList.Children.Clear();
+        _interviewAnswers.Clear();
+
+        foreach (var q in questions)
+        {
+            var card = new StackPanel { Spacing = 8 };
+
+            var title = new TextBlock
+            {
+                Text = q.Question,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            };
+            card.Children.Add(title);
+
+            if (q.Options.Count > 0)
+            {
+                var optionsPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 8
+                };
+
+                var customBox = new TextBox
+                {
+                    PlaceholderText = "Свой ответ...",
+                    FontSize = 12
+                };
+
+                var optionButtons = new List<Button>();
+                foreach (var opt in q.Options)
+                {
+                    var optText = opt;
+                    var btn = new Button
+                    {
+                        Content = optText,
+                        FontSize = 12,
+                        Padding = new Thickness(8, 4, 8, 4)
+                    };
+
+                    btn.Click += (_, _) =>
+                    {
+                        var isSelected = _interviewAnswers.TryGetValue(q.Question, out var current) && current == optText;
+                        if (isSelected)
+                        {
+                            _interviewAnswers.Remove(q.Question);
+                            btn.Style = null;
+                        }
+                        else
+                        {
+                            _interviewAnswers[q.Question] = optText;
+                            customBox.Text = "";
+                            foreach (var b in optionButtons) b.Style = null;
+                            btn.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
+                        }
+                    };
+
+                    optionButtons.Add(btn);
+                    optionsPanel.Children.Add(btn);
+                }
+
+                card.Children.Add(optionsPanel);
+
+                customBox.TextChanged += (_, _) =>
+                {
+                    var val = customBox.Text.Trim();
+                    if (!string.IsNullOrEmpty(val))
+                    {
+                        _interviewAnswers[q.Question] = val;
+                        foreach (var b in optionButtons) b.Style = null;
+                    }
+                };
+
+                card.Children.Add(customBox);
+            }
+
+            InterviewQuestionsList.Children.Add(card);
+        }
+    }
+
+    private void SetLoadingState(bool loading, string text = "")
+    {
+        _isGenerating = loading;
+        CompileBtn.IsEnabled = !loading;
+        CompileProgressRing.IsActive = loading;
+        CompileProgressRing.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
+        CompileIcon.Visibility = loading ? Visibility.Collapsed : Visibility.Visible;
+        CompileBtnText.Text = loading ? text : "Скомпилировать спецификацию";
+    }
+
+    private Item CreateCurrentItem()
+    {
+        return new Item(InputTitleBox?.Text ?? "Новая идея")
         {
             Concept = InputConceptBox?.Text ?? "",
             Platform = (PlatformBox?.SelectedItem as ComboBoxItem)?.Content as string ?? "Web",
             Style = (StyleBox?.SelectedItem as ComboBoxItem)?.Content as string ?? "Editorial & Swiss Modern"
         };
+    }
+
+    private static AiSettings CreateAiSettings()
+    {
+        var provider = Prefs.Current.AiProvider switch
+        {
+            "ollama" => AiProvider.Ollama,
+            "offline" => AiProvider.Offline,
+            _ => AiProvider.Gemini
+        };
+
+        return new AiSettings
+        {
+            Provider = provider,
+            GeminiApiKey = Prefs.Current.GeminiApiKey,
+            GeminiModel = Prefs.Current.GeminiModel,
+            OllamaEndpoint = Prefs.Current.OllamaEndpoint,
+            OllamaModel = Prefs.Current.OllamaModel,
+            InterviewEnabled = Prefs.Current.TranslatorInterview
+        };
+    }
+
+    private void Compile()
+    {
+        var item = CreateCurrentItem();
 
         var output = _activeMode switch
         {
@@ -55,7 +289,7 @@ public sealed partial class PromptTranslatorPage : Page
             "targeted" => ItemTitle.CompileTargetedEditPrompt(item, TargetElementBox?.Text ?? "", TargetScopeBox?.Text ?? ""),
             "brief" => ItemTitle.CompileConcisePrompt(item),
             "actions" => ItemTitle.CompileActionPrompt(item),
-            _ => ItemTitle.CompileStitchPrompt(item) // default: stitch
+            _ => ItemTitle.CompileStitchPrompt(item)
         };
 
         if (OutputTextBox != null)
@@ -72,7 +306,6 @@ public sealed partial class PromptTranslatorPage : Page
         var text = (InputTitleBox?.Text ?? "") + " " + (InputConceptBox?.Text ?? "");
         var len = text.Trim().Length;
 
-        // Base 50, +25 if >50 chars, +15 if >100 chars, +10 for design tokens
         var score = 50;
         if (len > 30) score += 20;
         if (len > 80) score += 15;

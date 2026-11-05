@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using KiteWin.Core;
+using KiteWin.Core.Services;
 using Xunit;
 
 namespace KiteWin.Core.Tests;
@@ -214,5 +215,115 @@ public class ItemStoreTests : IDisposable
     public void Dispose()
     {
         foreach (var suffix in new[] { "", "-wal", "-shm" }) File.Delete(_path + suffix);
+    }
+}
+
+public class AiServiceTests
+{
+    private static readonly Regex EmojiRegex = new(@"[\uD83C-\uDBFF\uDC00-\uDFFF]|[\u2600-\u27BF]", RegexOptions.Compiled);
+
+    [Theory]
+    [InlineData("gemini-2.5-flash", "gemini-3.5-flash")]
+    [InlineData("gemini-2.5-pro", "gemini-3.5-flash")]
+    [InlineData("gemini-1.5-flash", "gemini-3.5-flash")]
+    [InlineData("", "gemini-3.5-flash")]
+    [InlineData("custom-gemini-model", "custom-gemini-model")]
+    public void ModelChain_MapsRetiredModelsToDefault(string input, string expectedFirst)
+    {
+        var chain = AiService.GetModelChain(input);
+        Assert.NotEmpty(chain);
+        Assert.Equal(expectedFirst, chain[0]);
+        Assert.Contains("gemini-3.5-flash", chain);
+        Assert.Contains("gemini-3.1-flash-lite", chain);
+        Assert.Contains("gemini-flash-latest", chain);
+    }
+
+    [Fact]
+    public void ParseInterview_HandlesValidJsonAndFences()
+    {
+        var jsonWithFences = """
+        ```json
+        [
+          {
+            "question": "Какой протокол для P2P-синхронизации?",
+            "options": ["HTTP REST", "gRPC", "WebSocket"]
+          },
+          {
+            "question": "Локальное хранилище данных?",
+            "options": ["SQLite WAL", "JSON flat file"]
+          }
+        ]
+        ```
+        """;
+
+        var questions = AiPrompts.ParseInterview(jsonWithFences);
+        Assert.Equal(2, questions.Count);
+        Assert.Equal("Какой протокол для P2P-синхронизации?", questions[0].Question);
+        Assert.Equal(3, questions[0].Options.Count);
+        Assert.Contains("HTTP REST", questions[0].Options);
+        Assert.Equal("Локальное хранилище данных?", questions[1].Question);
+        Assert.Equal(2, questions[1].Options.Count);
+    }
+
+    [Fact]
+    public void ParseInterview_ReturnsEmptyOnMalformedInput()
+    {
+        Assert.Empty(AiPrompts.ParseInterview(""));
+        Assert.Empty(AiPrompts.ParseInterview("This is not json at all."));
+        Assert.Empty(AiPrompts.ParseInterview("{\"error\": 404}"));
+    }
+
+    [Fact]
+    public void Enrich_AddsClarificationsAndMandatoryDirectives()
+    {
+        var baseIdea = "Синхронизация заметок";
+        var answers = new[]
+        {
+            ("Какой протокол?", "HTTP REST"),
+            ("Формат хранилища?", "SQLite")
+        };
+
+        var enriched = AiPrompts.Enrich(baseIdea, answers);
+
+        Assert.Contains(baseIdea, enriched);
+        Assert.Contains("- Какой протокол? HTTP REST", enriched);
+        Assert.Contains("- Формат хранилища? SQLite", enriched);
+        Assert.Contains("Принятые решения автора", enriched);
+    }
+
+    [Fact]
+    public void ChatSystemPrompt_ContainsKiteFactsAndZeroEmojis()
+    {
+        var context = new ChatContext(
+            Ideas: ["SaaS Studio", "P2P Sync Engine"],
+            SelectedIdea: "SaaS Studio",
+            Canvas: "Frame 1: Metrics, Frame 2: Charts"
+        );
+
+        var prompt = AiPrompts.BuildChatSystemPrompt(context);
+
+        Assert.Contains("KiteWin для Windows", prompt);
+        Assert.Contains("Kite для macOS", prompt);
+        Assert.Contains("24242", prompt);
+        Assert.Contains("24243", prompt);
+        Assert.Contains("SaaS Studio", prompt);
+        Assert.Contains("Frame 1: Metrics", prompt);
+        Assert.DoesNotMatch(EmojiRegex, prompt);
+    }
+
+    [Fact]
+    public void AllAiPrompts_ZeroEmojis()
+    {
+        var translatorPrompt = AiPrompts.BuildTranslatorPrompt("plan", "Тестовый проект", "Windows", "Editorial & Swiss Modern");
+        var stitchPrompt = AiPrompts.BuildTranslatorPrompt("stitch", "Тестовый экран", "Web", "Claude Paper");
+        var editPrompt = AiPrompts.BuildTranslatorPrompt("edit", "Правка кнопки", "Mobile", "Codex Minimal");
+        var interviewPrompt = AiPrompts.BuildInterviewPrompt("Тестовая идея", "Windows", "Terracotta Journal");
+
+        Assert.DoesNotMatch(EmojiRegex, translatorPrompt);
+        Assert.DoesNotMatch(EmojiRegex, stitchPrompt);
+        Assert.DoesNotMatch(EmojiRegex, editPrompt);
+        Assert.DoesNotMatch(EmojiRegex, interviewPrompt);
+        Assert.DoesNotMatch(EmojiRegex, AiPrompts.SpecificityRules);
+        Assert.DoesNotMatch(EmojiRegex, AiPrompts.KiteFacts);
     }
 }

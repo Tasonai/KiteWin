@@ -131,37 +131,93 @@
 
                         <!-- Active Antigravity Skills -->
                         <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Активные скиллы Antigravity" />
-                        <WrapPanel Orientation="Horizontal">
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/enhance-prompt" />
                             </Border>
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/design-md" />
                             </Border>
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/taste-design" />
                             </Border>
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/emil-design-eng" />
                             </Border>
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/a11y-debugging" />
                             </Border>
-                            <Border Margin="0,0,8,8" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
                                 <TextBlock FontSize="11" Text="/subagent-driven-development" />
                             </Border>
-                        </WrapPanel>
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,4">
+                                <TextBlock FontSize="11" Text="/gsd-execute-phase" />
+                            </Border>
+                        </StackPanel>
 
-                        <!-- Compile Button -->
-                        <Button
-                            Click="OnCompileClick"
-                            HorizontalAlignment="Stretch"
-                            Style="{StaticResource AccentButtonStyle}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE70F;" FontSize="14" />
-                                <TextBlock FontWeight="SemiBold" Text="Скомпилировать спецификацию" />
+                        <!-- Pre-Plan Clarifying Interview -->
+                        <Border
+                            x:Name="InterviewPanel"
+                            Padding="12"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="Collapsed">
+                            <StackPanel Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE8BD;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock FontWeight="SemiBold" Text="Уточните, чтобы план вышел точным" />
+                                </StackPanel>
+                                <StackPanel x:Name="InterviewQuestionsList" Spacing="12" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        x:Name="SubmitInterviewBtn"
+                                        Click="OnSubmitInterviewClick"
+                                        Content="Сгенерировать с ответами"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                    <Button
+                                        x:Name="SkipInterviewBtn"
+                                        Click="OnSkipInterviewClick"
+                                        Content="Пропустить" />
+                                </StackPanel>
                             </StackPanel>
-                        </Button>
+                        </Border>
+
+                        <!-- Action Buttons -->
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button
+                                x:Name="CompileBtn"
+                                Click="OnCompileClick"
+                                HorizontalAlignment="Stretch"
+                                Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ProgressRing
+                                        x:Name="CompileProgressRing"
+                                        Width="16"
+                                        Height="16"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <FontIcon x:Name="CompileIcon" Glyph="&#xE70F;" FontSize="14" />
+                                    <TextBlock x:Name="CompileBtnText" FontWeight="SemiBold" Text="Скомпилировать спецификацию" />
+                                </StackPanel>
+                            </Button>
+                            <Button
+                                Grid.Column="1"
+                                Click="OnOfflineCompileClick"
+                                ToolTipService.ToolTip="Быстрая локальная сборка по шаблону без обращения к API">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <FontIcon Glyph="&#xE8B7;" FontSize="12" />
+                                    <TextBlock Text="Офлайн" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

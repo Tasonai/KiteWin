@@ -85,7 +85,7 @@
                             <FontIcon Glyph="&#xE70F;" />
                         </toolkit:SettingsCard.HeaderIcon>
                         <ComboBox x:Name="AiProviderBox" MinWidth="200" SelectionChanged="OnAiProviderChanged">
-                            <ComboBoxItem Content="Google Gemini API (2.5 Flash / Pro)" Tag="gemini" />
+                            <ComboBoxItem Content="Google Gemini API (3.5 Flash / Lite)" Tag="gemini" />
                             <ComboBoxItem Content="Локальная нейросеть Ollama" Tag="ollama" />
                             <ComboBoxItem Content="Офлайн-компилятор Stitch (без API)" Tag="offline" />
                         </ComboBox>
@@ -102,14 +102,22 @@
                             PlaceholderText="AIzaSy..." />
                     </toolkit:SettingsCard>
 
-                    <toolkit:SettingsCard Description="Выбор модели Gemini 2.5 (Flash для быстрого отклика, Pro для сложной логики)." Header="Модель Gemini">
+                    <toolkit:SettingsCard Description="Выбор модели Gemini (3.5 Flash с автоматическим переключением при сбоях)." Header="Модель Gemini">
                         <toolkit:SettingsCard.HeaderIcon>
                             <FontIcon Glyph="&#xE945;" />
                         </toolkit:SettingsCard.HeaderIcon>
                         <ComboBox x:Name="GeminiModelBox" MinWidth="240" SelectionChanged="OnGeminiModelChanged">
-                            <ComboBoxItem Content="gemini-2.5-flash (Рекомендуется)" Tag="gemini-2.5-flash" />
-                            <ComboBoxItem Content="gemini-2.5-pro (Глубокий анализ)" Tag="gemini-2.5-pro" />
+                            <ComboBoxItem Content="gemini-3.5-flash (Рекомендуется)" Tag="gemini-3.5-flash" />
+                            <ComboBoxItem Content="gemini-3.1-flash-lite (Сверхбыстрый)" Tag="gemini-3.1-flash-lite" />
+                            <ComboBoxItem Content="gemini-flash-latest (Автоматический fallback)" Tag="gemini-flash-latest" />
                         </ComboBox>
+                    </toolkit:SettingsCard>
+
+                    <toolkit:SettingsCard Description="Задавать 2-3 уточняющих вопроса перед компиляцией инженерного плана." Header="Интервью перед /plan">
+                        <toolkit:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE8BD;" />
+                        </toolkit:SettingsCard.HeaderIcon>
+                        <ToggleSwitch x:Name="InterviewToggleSwitch" IsOn="True" Toggled="OnInterviewToggled" />
                     </toolkit:SettingsCard>
 
                     <toolkit:SettingsCard Description="Локальный эндпоинт Ollama для автономной работы без интернета." Header="Эндпоинт Ollama">
