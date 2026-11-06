@@ -45,6 +45,24 @@
                             <TextBlock Text="Фрейм" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button x:Name="CoArchitectBtn" Click="OnCoArchitectClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE945;" FontSize="12" />
+                            <TextBlock Text="AI Архитектор" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="RepoIngestionBtn" Click="OnRepoIngestionClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xEA37;" FontSize="12" />
+                            <TextBlock Text="Импорт структуры" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="RoadmapHUDBtn" Click="OnRoadmapHUDClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE9D2;" FontSize="12" />
+                            <TextBlock Text="Дорожная карта" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <AppBarSeparator />
                     <Button x:Name="SyncCanvasBtn" Click="OnSyncCanvasClicked">
                         <StackPanel Orientation="Horizontal" Spacing="8">

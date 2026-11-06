@@ -34,7 +34,7 @@ def check_port_listening(port):
 
 class MockKiteServer(BaseHTTPRequestHandler):
     ideas = []
-    canvas = {"frames": [], "stickies": []}
+    canvas = {"frames": [], "stickies": [], "connections": []}
     app_name = "Mock Kite"
     port_num = 0
 
@@ -106,7 +106,7 @@ def start_mock_server(port, app_name):
     class Handler(MockKiteServer):
         pass
     Handler.ideas = []
-    Handler.canvas = {"frames": [], "stickies": []}
+    Handler.canvas = {"frames": [], "stickies": [], "connections": []}
     Handler.app_name = app_name
     Handler.port_num = port
 

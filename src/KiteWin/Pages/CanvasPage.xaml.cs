@@ -366,6 +366,49 @@ public sealed partial class CanvasPage : Page
         RenderCanvas();
     }
 
+    private void OnCoArchitectClicked(object sender, RoutedEventArgs e)
+    {
+        var count = CanvasCoArchitect.ApplyGaps(_canvasStore.Snapshot);
+        if (count > 0)
+        {
+            _canvasStore.Save();
+            RenderCanvas();
+            ShowToast($"AI Архитектор: добавлено {count} критических модулей со связями");
+        }
+        else
+        {
+            ShowToast("Архитектура сбалансирована, критических пробелов не обнаружено");
+        }
+    }
+
+    private void OnRepoIngestionClicked(object sender, RoutedEventArgs e)
+    {
+        var arch = CodebaseIngestion.Analyze(AppDomain.CurrentDomain.BaseDirectory);
+        _canvasStore.Snapshot.Frames.Clear();
+        _canvasStore.Snapshot.Frames.AddRange(arch.Frames);
+        _canvasStore.Snapshot.Stickies.Clear();
+        _canvasStore.Snapshot.Stickies.AddRange(arch.Stickies);
+        _canvasStore.Snapshot.Connections.Clear();
+        _canvasStore.Snapshot.Connections.AddRange(arch.Connections);
+        _canvasStore.Save();
+        RenderCanvas();
+        ShowToast($"Импорт структуры: {arch.Name} ({arch.ProjectType}) размещен на холсте");
+    }
+
+    private void OnRoadmapHUDClicked(object sender, RoutedEventArgs e)
+    {
+        var (frames, stickies, connections) = RoadmapTracker.GenerateWaves();
+        _canvasStore.Snapshot.Frames.Clear();
+        _canvasStore.Snapshot.Frames.AddRange(frames);
+        _canvasStore.Snapshot.Stickies.Clear();
+        _canvasStore.Snapshot.Stickies.AddRange(stickies);
+        _canvasStore.Snapshot.Connections.Clear();
+        _canvasStore.Snapshot.Connections.AddRange(connections);
+        _canvasStore.Save();
+        RenderCanvas();
+        ShowToast("Дорожная карта: волны выполнения и статус задач отображены");
+    }
+
     private async void OnSyncCanvasClicked(object sender, RoutedEventArgs e)
     {
         SyncCanvasBtn.IsEnabled = false;

@@ -399,9 +399,11 @@ public static class WebStudio
               <div class="toolbar">
                 <input type="text" id="canvas-search" class="search-box" placeholder="Поиск на холсте..." oninput="searchCanvas()">
                 <div class="toolbar-actions">
-                  <button class="btn btn-secondary" onclick="exportCanvasHTML()">Экспорт HTML</button>
-                  <button class="btn btn-secondary" onclick="exportCanvasMermaid()">Экспорт Mermaid</button>
-                  <button class="btn" onclick="loadCanvas()">Обновить холст</button>
+                  <button class="btn" onclick="applyCoArchitect()">AI Архитектор</button>
+                  <button class="btn btn-secondary" onclick="applyRepoIngestion()">Импорт структуры</button>
+                  <button class="btn btn-secondary" onclick="applyRoadmapHUD()">Дорожная карта</button>
+                  <button class="btn btn-secondary" onclick="exportCanvasMermaid()">Mermaid</button>
+                  <button class="btn btn-secondary" onclick="exportCanvasHTML()">HTML</button>
                 </div>
               </div>
               <div id="canvas-container">
@@ -659,6 +661,9 @@ public static class WebStudio
                 <pattern id="grid-pattern" width="40" height="40" patternUnits="userSpaceOnUse">
                   <circle cx="20" cy="20" r="1.2" fill="var(--border)"/>
                 </pattern>
+                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--accent)"/>
+                </marker>
               `;
               svg.appendChild(defs);
 
@@ -669,6 +674,47 @@ public static class WebStudio
               bgRect.setAttribute('height', 6000);
               bgRect.setAttribute('fill', 'url(#grid-pattern)');
               g.appendChild(bgRect);
+
+              // Connections
+              const nodePositions = {};
+              (canvasData.stickies || []).forEach(s => {
+                const posX = Array.isArray(s.position) ? s.position[0] : (s.x || 100);
+                const posY = Array.isArray(s.position) ? s.position[1] : (s.y || 100);
+                nodePositions[s.id] = { x: posX + 90, y: posY + 60 };
+              });
+              (canvasData.frames || []).forEach(f => {
+                nodePositions[f.id] = { x: f.x + f.width/2, y: f.y + f.height/2 };
+              });
+
+              (canvasData.connections || []).forEach(c => {
+                const p1 = nodePositions[c.fromId];
+                const p2 = nodePositions[c.toId];
+                if (p1 && p2) {
+                  const dx = (p2.x - p1.x) * 0.5;
+                  const pathD = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
+                  const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                  pathEl.setAttribute('d', pathD);
+                  pathEl.setAttribute('fill', 'none');
+                  pathEl.setAttribute('stroke', c.colorHex || 'var(--accent)');
+                  pathEl.setAttribute('stroke-width', '2');
+                  pathEl.setAttribute('marker-end', 'url(#arrow)');
+                  g.appendChild(pathEl);
+
+                  if (c.label) {
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2 - 8;
+                    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    txt.setAttribute('x', midX);
+                    txt.setAttribute('y', midY);
+                    txt.setAttribute('fill', 'var(--text-muted)');
+                    txt.setAttribute('font-size', '11');
+                    txt.setAttribute('font-family', 'var(--font-mono)');
+                    txt.setAttribute('text-anchor', 'middle');
+                    txt.textContent = c.label;
+                    g.appendChild(txt);
+                  }
+                }
+              });
 
               // Frames
               (canvasData.frames || []).forEach(f => {
@@ -727,6 +773,131 @@ public static class WebStudio
                 mm += `  end\\n`;
               });
               prompt('Mermaid код графа:', mm);
+            }
+
+            async function applyCoArchitect() {
+              log('AI Ко-Архитектор: анализ связей и пробелов в архитектуре...');
+              const gaps = [
+                {
+                  frame: 'Security & Auth Boundary',
+                  sticky: 'JWT / Session Guard + Rate Limiter',
+                  colorHex: '#FCE7F3',
+                  from: canvasData.stickies?.[0]?.id,
+                  label: 'Secures'
+                },
+                {
+                  frame: 'Cache & Acceleration',
+                  sticky: 'In-Memory State WAL + LRU Cache',
+                  colorHex: '#FEF3C7',
+                  from: canvasData.stickies?.[1]?.id,
+                  label: 'Caches'
+                },
+                {
+                  frame: 'Observability & Metrics',
+                  sticky: 'Structured Audit Log + Prometheus / OpenTelemetry',
+                  colorHex: '#E0E7FF',
+                  from: canvasData.stickies?.[0]?.id,
+                  label: 'Audits'
+                }
+              ];
+
+              if (!canvasData.frames) canvasData.frames = [];
+              if (!canvasData.stickies) canvasData.stickies = [];
+              if (!canvasData.connections) canvasData.connections = [];
+
+              let startX = 100;
+              if (canvasData.frames.length > 0) {
+                const maxX = Math.max(...canvasData.frames.map(f => f.x + f.width));
+                startX = maxX + 60;
+              }
+
+              gaps.forEach((g, idx) => {
+                const fId = 'frame-ai-' + Date.now() + '-' + idx;
+                const sId = 'sticky-ai-' + Date.now() + '-' + idx;
+                canvasData.frames.push({
+                  id: fId,
+                  title: g.frame,
+                  colorHex: '#EC4899',
+                  x: startX,
+                  y: 100,
+                  width: 320,
+                  height: 300
+                });
+                canvasData.stickies.push({
+                  id: sId,
+                  text: g.sticky,
+                  colorHex: g.colorHex,
+                  position: [startX + 20, 160]
+                });
+                if (g.from) {
+                  canvasData.connections.push({
+                    id: 'conn-ai-' + Date.now() + '-' + idx,
+                    fromId: g.from,
+                    toId: sId,
+                    label: g.label,
+                    colorHex: '#EC4899'
+                  });
+                }
+                startX += 360;
+              });
+
+              renderCanvas();
+              log('AI Ко-Архитектор: добавлены модули безопасности и кэширования со стрелками связей.');
+              await fetch('/api/canvas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(canvasData)
+              });
+            }
+
+            async function applyRepoIngestion() {
+              log('Реверс-инжиниринг: генерация графа структуры репозитория...');
+              canvasData.frames = [
+                { id: 'f-ui', title: 'UI & Presentation Layer', colorHex: '#3B82F6', x: 80, y: 80, width: 340, height: 420 },
+                { id: 'f-srv', title: 'Domain Services & P2P', colorHex: '#10B981', x: 480, y: 80, width: 340, height: 420 },
+                { id: 'f-db', title: 'Data Persistence & State', colorHex: '#8B5CF6', x: 880, y: 80, width: 340, height: 420 }
+              ];
+              canvasData.stickies = [
+                { id: 's-ui-1', text: 'Views & Canvas Controls', colorHex: '#DBEAFE', position: [100, 140] },
+                { id: 's-srv-1', text: 'P2P REST Sync Engine (24242/3)', colorHex: '#D1FAE5', position: [500, 140] },
+                { id: 's-db-1', text: 'Local Store SQLite/SwiftData', colorHex: '#EDE9FE', position: [900, 140] }
+              ];
+              canvasData.connections = [
+                { id: 'c-1', fromId: 's-ui-1', toId: 's-srv-1', label: 'HTTP / SSE', colorHex: '#3B82F6' },
+                { id: 'c-2', fromId: 's-srv-1', toId: 's-db-1', label: 'WAL Query', colorHex: '#10B981' }
+              ];
+              renderCanvas();
+              log('Реверс-инжиниринг: схема репозитория размещена на холсте.');
+              await fetch('/api/canvas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(canvasData)
+              });
+            }
+
+            async function applyRoadmapHUD() {
+              log('Дорожная карта: генерация дорожек фаз и статуса исполнения...');
+              canvasData.frames = [
+                { id: 'f-p1', title: 'Phase 1: Foundation [Wave 1]', colorHex: '#10B981', x: 80, y: 80, width: 340, height: 440 },
+                { id: 'f-p2', title: 'Phase 2: Core Features [Wave 2]', colorHex: '#3B82F6', x: 480, y: 80, width: 340, height: 440 },
+                { id: 'f-p3', title: 'Phase 3: Polish & Ship [Wave 3]', colorHex: '#8B5CF6', x: 880, y: 80, width: 340, height: 440 }
+              ];
+              canvasData.stickies = [
+                { id: 's-t1', text: '[DONE] Local Schema & Sync Handshake', colorHex: '#D1FAE5', position: [100, 140] },
+                { id: 's-t2', text: '[WIP] Canvas Connectors & Co-Architect', colorHex: '#FEF3C7', position: [500, 140] },
+                { id: 's-t3', text: '[TODO] HIG/BAWA Verification & Docs', colorHex: '#F3F4F6', position: [900, 140] }
+              ];
+              canvasData.connections = [
+                { id: 'c-p12', fromId: 's-t1', toId: 's-t2', label: 'Unblocks', colorHex: '#10B981' },
+                { id: 'c-p23', fromId: 's-t2', toId: 's-t3', label: 'Prerequisite', colorHex: '#3B82F6' }
+              ];
+              renderCanvas();
+              log('Дорожная карта: отображены фазы исполнения со статусами тасок.');
+              await fetch('/api/canvas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(canvasData)
+              });
             }
 
             // Mouse pan
