@@ -104,18 +104,49 @@ public sealed partial class CanvasPage : Page
                 var labelPill = new Border
                 {
                     Background = new SolidColorBrush(Colors.White),
-                    BorderBrush = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.4)),
+                    BorderBrush = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.6)),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(8, 2, 8, 2),
-                    Child = new TextBlock
-                    {
-                        Text = conn.Label,
-                        FontSize = 10,
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                        Foreground = new SolidColorBrush(ColorFromHex(conn.ColorHex, 1.0))
-                    }
+                    Padding = new Thickness(8, 2, 8, 2)
                 };
+
+                var flyout = new MenuFlyout();
+                foreach (var proto in new[] { "Calls", "HTTP / REST", "SSE Stream", "gRPC", "WAL Query", "Depends On", "Audits" })
+                {
+                    var item = new MenuFlyoutItem { Text = proto };
+                    item.Click += (_, _) =>
+                    {
+                        conn.Label = proto;
+                        _canvasStore.Save();
+                        RenderCanvas();
+                        ShowToast($"Подпись связи изменена: {proto}");
+                    };
+                    flyout.Items.Add(item);
+                }
+                flyout.Items.Add(new MenuFlyoutSeparator());
+                var deleteItem = new MenuFlyoutItem { Text = "Удалить связь" };
+                deleteItem.Icon = new FontIcon { Glyph = "\uE74D" };
+                deleteItem.Click += (_, _) =>
+                {
+                    _canvasStore.Snapshot.Connections.Remove(conn);
+                    _canvasStore.Save();
+                    RenderCanvas();
+                    ShowToast("Связь удалена");
+                };
+                flyout.Items.Add(deleteItem);
+
+                labelPill.ContextFlyout = flyout;
+                labelPill.Tapped += (s, e) => flyout.ShowAt(labelPill);
+
+                var tb = new TextBlock
+                {
+                    Text = conn.Label,
+                    FontSize = 10,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(ColorFromHex(conn.ColorHex, 1.0))
+                };
+                labelPill.Child = tb;
+
                 Canvas.SetLeft(labelPill, 435); // grid: ok freeform canvas
                 Canvas.SetTop(labelPill, 385); // grid: ok freeform canvas
                 Canvas.SetZIndex(labelPill, 3);

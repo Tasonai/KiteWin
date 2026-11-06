@@ -710,7 +710,12 @@ public static class WebStudio
                     txt.setAttribute('font-size', '11');
                     txt.setAttribute('font-family', 'var(--font-mono)');
                     txt.setAttribute('text-anchor', 'middle');
+                    txt.setAttribute('cursor', 'pointer');
                     txt.textContent = c.label;
+                    txt.onclick = (e) => {
+                      e.stopPropagation();
+                      editConnection(c.id);
+                    };
                     g.appendChild(txt);
                   }
                 }
@@ -893,6 +898,26 @@ public static class WebStudio
               ];
               renderCanvas();
               log('Дорожная карта: отображены фазы исполнения со статусами тасок.');
+              await fetch('/api/canvas', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(canvasData)
+              });
+            }
+
+            async function editConnection(connId) {
+              const c = (canvasData.connections || []).find(x => x.id === connId);
+              if (!c) return;
+              const newLabel = prompt('Новая подпись связи (или пусто для удаления):', c.label);
+              if (newLabel === null) return;
+              if (newLabel.trim() === '') {
+                canvasData.connections = canvasData.connections.filter(x => x.id !== connId);
+                log('Связь удалена');
+              } else {
+                c.label = newLabel.trim();
+                log('Подпись связи обновлена: ' + c.label);
+              }
+              renderCanvas();
               await fetch('/api/canvas', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

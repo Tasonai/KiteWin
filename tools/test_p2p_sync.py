@@ -53,7 +53,7 @@ class MockKiteServer(BaseHTTPRequestHandler):
             payload = {
                 "status": "online",
                 "app": self.__class__.app_name,
-                "version": "1.2.0",
+                "version": "1.3.0",
                 "port": self.__class__.port_num
             }
             self._send_json(payload)
