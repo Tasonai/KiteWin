@@ -42,6 +42,7 @@ public sealed class KiteSyncServer : IDisposable
 
             _cts = new CancellationTokenSource();
             _listenTask = Task.Run(() => ListenLoopAsync(_cts.Token));
+            KiteLANBeacon.Shared.Start(Port, "Kite Windows", "Windows");
         }
         catch (HttpListenerException)
         {
@@ -55,6 +56,7 @@ public sealed class KiteSyncServer : IDisposable
 
                 _cts = new CancellationTokenSource();
                 _listenTask = Task.Run(() => ListenLoopAsync(_cts.Token));
+                KiteLANBeacon.Shared.Start(Port, "Kite Windows", "Windows");
             }
             catch
             {
@@ -67,6 +69,7 @@ public sealed class KiteSyncServer : IDisposable
     public void Stop()
     {
         if (!IsRunning) return;
+        KiteLANBeacon.Shared.Stop();
 
         try
         {
@@ -194,6 +197,11 @@ public sealed class KiteSyncServer : IDisposable
                         Port = Port
                     };
                     await WriteJsonResponseAsync(res, status);
+                    break;
+
+                case "/api/peers":
+                    var peers = KiteLANBeacon.Shared.ActivePeers;
+                    await WriteJsonResponseAsync(res, peers);
                     break;
 
                 case "/api/ideas":

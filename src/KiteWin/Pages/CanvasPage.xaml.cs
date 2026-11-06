@@ -14,7 +14,11 @@ public sealed partial class CanvasPage : Page
 {
     private readonly AppModel _appModel;
     private readonly CanvasStore _canvasStore;
+    private readonly HashSet<string> _selectedElementIds = [];
+    private readonly Dictionary<string, FrameworkElement> _canvasElementMap = [];
     private double _zoom = 1.0;
+    private bool _isMarqueeActive;
+    private Windows.Foundation.Point _marqueeStart;
 
     public CanvasPage()
     {
@@ -23,16 +27,93 @@ public sealed partial class CanvasPage : Page
         _canvasStore = _appModel.CanvasStore;
 
         Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
     }
 
     private void OnPageLoaded(object sender, RoutedEventArgs e)
     {
+        MainCanvas.PointerPressed += OnCanvasPointerPressed;
+        MainCanvas.PointerMoved += OnCanvasPointerMoved;
+        MainCanvas.PointerReleased += OnCanvasPointerReleased;
+
+        KeyDown += OnCanvasKeyDown;
+
+        KiteLANBeacon.Shared.PeersChanged += OnPeersChanged;
+        UpdateLANPeers(KiteLANBeacon.Shared.ActivePeers);
+
         RenderCanvas();
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        MainCanvas.PointerPressed -= OnCanvasPointerPressed;
+        MainCanvas.PointerMoved -= OnCanvasPointerMoved;
+        MainCanvas.PointerReleased -= OnCanvasPointerReleased;
+
+        KeyDown -= OnCanvasKeyDown;
+
+        KiteLANBeacon.Shared.PeersChanged -= OnPeersChanged;
+    }
+
+    private void OnPeersChanged(IReadOnlyList<KitePeer> peers)
+    {
+        DispatcherQueue.TryEnqueue(() => UpdateLANPeers(peers));
+    }
+
+    private void UpdateLANPeers(IReadOnlyList<KitePeer> peers)
+    {
+        LANPeersCountText.Text = $"Пиры: {peers.Count}";
+        LANPeersFlyout.Items.Clear();
+
+        if (peers.Count == 0)
+        {
+            LANPeersFlyout.Items.Add(new MenuFlyoutItem
+            {
+                Text = "Поиск устройств в локальной сети...",
+                IsEnabled = false
+            });
+            return;
+        }
+
+        foreach (var peer in peers)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = $"{peer.Hostname} ({peer.Platform}) - {peer.Ip}:{peer.Port}",
+                Icon = new FontIcon { Glyph = "\uE770" }
+            };
+            item.Click += async (_, _) =>
+            {
+                await PullCanvasFromPeerAsync(peer);
+            };
+            LANPeersFlyout.Items.Add(item);
+        }
+    }
+
+    private async Task PullCanvasFromPeerAsync(KitePeer peer)
+    {
+        try
+        {
+            var endpoint = $"http://{peer.Ip}:{peer.Port}";
+            var success = await _appModel.SyncClient.SyncCanvasBidirectionalAsync(endpoint, _canvasStore);
+            RenderCanvas();
+            ShowToast(success ? $"Синхронизировано с {peer.Hostname}" : $"Не удалось подключиться к {peer.Hostname}");
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Ошибка синхронизации: {ex.Message}");
+        }
     }
 
     private void RenderCanvas()
     {
         MainCanvas.Children.Clear();
+        _canvasElementMap.Clear();
+
+        if (MarqueeSelectionBorder != null && !MainCanvas.Children.Contains(MarqueeSelectionBorder))
+        {
+            MainCanvas.Children.Add(MarqueeSelectionBorder);
+        }
 
         // 1. Draw Frames
         foreach (var frame in _canvasStore.Snapshot.Frames)
@@ -71,7 +152,7 @@ public sealed partial class CanvasPage : Page
             Canvas.SetLeft(container, frame.X); // grid: ok freeform canvas
             Canvas.SetTop(container, frame.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(container, 1);
-            AttachDrag(container, (x, y) => { frame.X = x; frame.Y = y; _canvasStore.Save(); });
+            AttachDrag(container, $"frame-{frame.Id}", (x, y) => { frame.X = x; frame.Y = y; _canvasStore.Save(); });
 
             MainCanvas.Children.Add(container);
         }
@@ -161,7 +242,7 @@ public sealed partial class CanvasPage : Page
             Canvas.SetLeft(card, refCard.X); // grid: ok freeform canvas
             Canvas.SetTop(card, refCard.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(card, 10);
-            AttachDrag(card, (x, y) => { refCard.X = x; refCard.Y = y; _canvasStore.Save(); });
+            AttachDrag(card, $"ref-{refCard.Id}", (x, y) => { refCard.X = x; refCard.Y = y; _canvasStore.Save(); });
             MainCanvas.Children.Add(card);
         }
 
@@ -172,7 +253,7 @@ public sealed partial class CanvasPage : Page
             Canvas.SetLeft(stickyEl, sticky.X); // grid: ok freeform canvas
             Canvas.SetTop(stickyEl, sticky.Y); // grid: ok freeform canvas
             Canvas.SetZIndex(stickyEl, 10);
-            AttachDrag(stickyEl, (x, y) => { sticky.X = x; sticky.Y = y; _canvasStore.Save(); });
+            AttachDrag(stickyEl, $"sticky-{sticky.Id}", (x, y) => { sticky.X = x; sticky.Y = y; _canvasStore.Save(); });
             MainCanvas.Children.Add(stickyEl);
         }
 
@@ -184,8 +265,11 @@ public sealed partial class CanvasPage : Page
             Canvas.SetLeft(ideaCard, 560); // grid: ok freeform canvas
             Canvas.SetTop(ideaCard, 200); // grid: ok freeform canvas
             Canvas.SetZIndex(ideaCard, 10);
+            AttachDrag(ideaCard, $"idea-{firstIdea.Id}", (x, y) => { });
             MainCanvas.Children.Add(ideaCard);
         }
+
+        UpdateSelectionVisuals();
     }
 
     private FrameworkElement CreateStickyElement(CanvasSticky sticky)
@@ -323,20 +407,45 @@ public sealed partial class CanvasPage : Page
         return border;
     }
 
-    private void AttachDrag(FrameworkElement element, Action<double, double> onMoved)
+    private void AttachDrag(FrameworkElement element, string elementId, Action<double, double> onMoved)
     {
+        _canvasElementMap[elementId] = element;
         var isDragging = false;
         var startPoint = new Windows.Foundation.Point();
-        var origX = 0.0;
-        var origY = 0.0;
+        var origPositions = new Dictionary<string, (double X, double Y)>();
 
         element.PointerPressed += (s, e) =>
         {
+            var isShiftOrCtrl = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+                                Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+            if (!isShiftOrCtrl && !_selectedElementIds.Contains(elementId))
+            {
+                _selectedElementIds.Clear();
+                _selectedElementIds.Add(elementId);
+            }
+            else if (isShiftOrCtrl)
+            {
+                if (_selectedElementIds.Contains(elementId))
+                    _selectedElementIds.Remove(elementId);
+                else
+                    _selectedElementIds.Add(elementId);
+            }
+            UpdateSelectionVisuals();
+
             isDragging = true;
             element.CapturePointer(e.Pointer);
             startPoint = e.GetCurrentPoint(MainCanvas).Position;
-            origX = Canvas.GetLeft(element);
-            origY = Canvas.GetTop(element);
+
+            origPositions.Clear();
+            foreach (var id in _selectedElementIds)
+            {
+                if (_canvasElementMap.TryGetValue(id, out var el))
+                {
+                    origPositions[id] = (Canvas.GetLeft(el), Canvas.GetTop(el));
+                }
+            }
+
             e.Handled = true;
         };
 
@@ -344,10 +453,19 @@ public sealed partial class CanvasPage : Page
         {
             if (!isDragging) return;
             var current = e.GetCurrentPoint(MainCanvas).Position;
-            var newX = Math.Max(20, origX + (current.X - startPoint.X));
-            var newY = Math.Max(20, origY + (current.Y - startPoint.Y));
-            Canvas.SetLeft(element, newX); // grid: ok freeform canvas
-            Canvas.SetTop(element, newY); // grid: ok freeform canvas
+            var dx = current.X - startPoint.X;
+            var dy = current.Y - startPoint.Y;
+
+            foreach (var kvp in origPositions)
+            {
+                if (_canvasElementMap.TryGetValue(kvp.Key, out var el))
+                {
+                    var newX = Math.Max(20, kvp.Value.X + dx);
+                    var newY = Math.Max(20, kvp.Value.Y + dy);
+                    Canvas.SetLeft(el, newX); // grid: ok freeform canvas
+                    Canvas.SetTop(el, newY); // grid: ok freeform canvas
+                }
+            }
             e.Handled = true;
         };
 
@@ -357,10 +475,219 @@ public sealed partial class CanvasPage : Page
             {
                 isDragging = false;
                 element.ReleasePointerCapture(e.Pointer);
-                onMoved(Canvas.GetLeft(element), Canvas.GetTop(element));
+
+                foreach (var id in _selectedElementIds)
+                {
+                    if (_canvasElementMap.TryGetValue(id, out var el))
+                    {
+                        var curX = Canvas.GetLeft(el);
+                        var curY = Canvas.GetTop(el);
+                        UpdateModelPosition(id, curX, curY);
+                    }
+                }
+                _canvasStore.Save();
                 e.Handled = true;
             }
         };
+    }
+
+    private void UpdateModelPosition(string id, double x, double y)
+    {
+        if (id.StartsWith("frame-"))
+        {
+            var raw = id["frame-".Length..];
+            var f = _canvasStore.Snapshot.Frames.FirstOrDefault(f => f.Id == raw);
+            if (f != null) { f.X = x; f.Y = y; }
+        }
+        else if (id.StartsWith("sticky-"))
+        {
+            var raw = id["sticky-".Length..];
+            var s = _canvasStore.Snapshot.Stickies.FirstOrDefault(s => s.Id == raw);
+            if (s != null) { s.X = x; s.Y = y; }
+        }
+        else if (id.StartsWith("ref-"))
+        {
+            var raw = id["ref-".Length..];
+            var r = _canvasStore.Snapshot.ReferenceCards.FirstOrDefault(r => r.Id == raw);
+            if (r != null) { r.X = x; r.Y = y; }
+        }
+    }
+
+    private void UpdateSelectionVisuals()
+    {
+        foreach (var kvp in _canvasElementMap)
+        {
+            var isSelected = _selectedElementIds.Contains(kvp.Key);
+            if (kvp.Value is Border b)
+            {
+                b.BorderThickness = isSelected ? new Thickness(2) : new Thickness(1);
+                if (isSelected)
+                    b.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 59, 130, 246));
+            }
+            else if (kvp.Value is Grid g && g.Children.Count > 0 && g.Children[0] is Border fb)
+            {
+                fb.BorderThickness = isSelected ? new Thickness(4) : new Thickness(2);
+                if (isSelected)
+                    fb.BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 59, 130, 246));
+            }
+        }
+    }
+
+    private void OnCanvasPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (e.OriginalSource is not Canvas) return;
+
+        var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (!shift)
+        {
+            _selectedElementIds.Clear();
+            UpdateSelectionVisuals();
+        }
+
+        _marqueeStart = e.GetCurrentPoint(MainCanvas).Position;
+        _isMarqueeActive = true;
+        MarqueeSelectionBorder.Visibility = Visibility.Visible;
+        Canvas.SetLeft(MarqueeSelectionBorder, _marqueeStart.X); // grid: ok freeform canvas
+        Canvas.SetTop(MarqueeSelectionBorder, _marqueeStart.Y); // grid: ok freeform canvas
+        MarqueeSelectionBorder.Width = 0; // grid: ok freeform canvas
+        MarqueeSelectionBorder.Height = 0; // grid: ok freeform canvas
+        MainCanvas.CapturePointer(e.Pointer);
+    }
+
+    private void OnCanvasPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isMarqueeActive) return;
+
+        var pt = e.GetCurrentPoint(MainCanvas).Position;
+        var minX = Math.Min(_marqueeStart.X, pt.X);
+        var minY = Math.Min(_marqueeStart.Y, pt.Y);
+        var w = Math.Abs(pt.X - _marqueeStart.X);
+        var h = Math.Abs(pt.Y - _marqueeStart.Y);
+
+        Canvas.SetLeft(MarqueeSelectionBorder, minX); // grid: ok freeform canvas
+        Canvas.SetTop(MarqueeSelectionBorder, minY); // grid: ok freeform canvas
+        MarqueeSelectionBorder.Width = Math.Max(0, w); // grid: ok freeform canvas
+        MarqueeSelectionBorder.Height = Math.Max(0, h); // grid: ok freeform canvas
+
+        var marqueeRect = new Windows.Foundation.Rect(minX, minY, w, h);
+        foreach (var kvp in _canvasElementMap)
+        {
+            var elLeft = Canvas.GetLeft(kvp.Value);
+            var elTop = Canvas.GetTop(kvp.Value);
+            var elW = kvp.Value.ActualWidth > 0 ? kvp.Value.ActualWidth : 200;
+            var elH = kvp.Value.ActualHeight > 0 ? kvp.Value.ActualHeight : 120;
+            var elRect = new Windows.Foundation.Rect(elLeft, elTop, elW, elH);
+
+            if (RectIntersects(marqueeRect, elRect))
+            {
+                _selectedElementIds.Add(kvp.Key);
+            }
+        }
+        UpdateSelectionVisuals();
+    }
+
+    private void OnCanvasPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isMarqueeActive)
+        {
+            _isMarqueeActive = false;
+            MarqueeSelectionBorder.Visibility = Visibility.Collapsed;
+            MainCanvas.ReleasePointerCapture(e.Pointer);
+        }
+    }
+
+    private static bool RectIntersects(Windows.Foundation.Rect r1, Windows.Foundation.Rect r2)
+    {
+        return !(r2.Left > r1.Right || r2.Right < r1.Left || r2.Top > r1.Bottom || r2.Bottom < r1.Top);
+    }
+
+    private void OnCanvasKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Delete || e.Key == Windows.System.VirtualKey.Back)
+        {
+            if (_selectedElementIds.Count > 0)
+            {
+                DeleteSelectedElements();
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void DeleteSelectedElements()
+    {
+        var count = _selectedElementIds.Count;
+        foreach (var id in _selectedElementIds.ToList())
+        {
+            if (id.StartsWith("frame-"))
+            {
+                var raw = id["frame-".Length..];
+                _canvasStore.Snapshot.Frames.RemoveAll(x => x.Id == raw);
+            }
+            else if (id.StartsWith("sticky-"))
+            {
+                var raw = id["sticky-".Length..];
+                _canvasStore.Snapshot.Stickies.RemoveAll(x => x.Id == raw);
+                _canvasStore.Snapshot.Connections.RemoveAll(x => x.FromId == id || x.ToId == id);
+            }
+            else if (id.StartsWith("ref-"))
+            {
+                var raw = id["ref-".Length..];
+                _canvasStore.Snapshot.ReferenceCards.RemoveAll(x => x.Id == raw);
+                _canvasStore.Snapshot.Connections.RemoveAll(x => x.FromId == id || x.ToId == id);
+            }
+        }
+
+        _selectedElementIds.Clear();
+        _canvasStore.Save();
+        RenderCanvas();
+        ShowToast($"Удалено элементов: {count}");
+    }
+
+    private void OnGroupSelectedClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedElementIds.Count == 0)
+        {
+            ShowToast("Выберите элементы для объединения в подсистему");
+            return;
+        }
+
+        var minX = double.MaxValue;
+        var minY = double.MaxValue;
+        var maxX = double.MinValue;
+        var maxY = double.MinValue;
+
+        foreach (var id in _selectedElementIds)
+        {
+            if (_canvasElementMap.TryGetValue(id, out var el))
+            {
+                var left = Canvas.GetLeft(el);
+                var top = Canvas.GetTop(el);
+                var w = el.ActualWidth > 0 ? el.ActualWidth : 200;
+                var h = el.ActualHeight > 0 ? el.ActualHeight : 120;
+
+                minX = Math.Min(minX, left);
+                minY = Math.Min(minY, top);
+                maxX = Math.Max(maxX, left + w);
+                maxY = Math.Max(maxY, top + h);
+            }
+        }
+
+        if (minX < double.MaxValue)
+        {
+            var newFrame = new CanvasFrame
+            {
+                Title = "Подсистема",
+                ColorHex = "#3B82F6",
+                X = Math.Max(20, minX - 24),
+                Y = Math.Max(20, minY - 32),
+                Width = Math.Max(200, maxX - minX + 48),
+                Height = Math.Max(160, maxY - minY + 56)
+            };
+            _canvasStore.Snapshot.Frames.Add(newFrame);
+            _canvasStore.Save();
+            RenderCanvas();
+            ShowToast("Элементы объединены в подсистему");
+        }
     }
 
     private void OnAddIdeaClicked(object sender, RoutedEventArgs e)
