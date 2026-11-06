@@ -378,6 +378,7 @@ public static class WebStudio
             <div class="status-indicator">
               <div id="sse-dot" class="dot pulse"></div>
               <span id="sse-status">Подключено (SSE)</span>
+              <span id="lan-peers-badge" style="margin-left: 8px; font-size: 11px; padding: 2px 6px; background: rgba(59,130,246,0.15); border-radius: 4px; color: var(--accent);">LAN: 0 пиров</span>
             </div>
           </header>
 
@@ -1063,6 +1064,20 @@ public static class WebStudio
               }
             }
 
+            async function checkPeers() {
+              try {
+                const res = await fetch('/api/peers');
+                if (res.ok) {
+                  const peers = await res.json();
+                  const el = document.getElementById('lan-peers-badge');
+                  if (el) {
+                    el.textContent = `LAN: ${peers.length} пиров`;
+                    el.title = (peers || []).map(p => `${p.hostname} (${p.platform}) - ${p.ip}:${p.port}`).join('\n') || 'Нет пиров в сети';
+                  }
+                }
+              } catch {}
+            }
+
             function escapeHtml(str) {
               return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
@@ -1072,8 +1087,10 @@ public static class WebStudio
               loadIdeas();
               loadCanvas();
               checkPeer();
+              checkPeers();
               initSSE();
               setInterval(checkPeer, 10000);
+              setInterval(checkPeers, 4000);
             });
           </script>
         </body>
