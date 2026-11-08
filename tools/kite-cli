@@ -18,6 +18,7 @@ import argparse
 import shutil
 import re
 import threading
+import uuid
 from collections import deque
 from typing import Any, Dict, List, Optional
 
@@ -363,32 +364,291 @@ def generate_canvas_openapi(canvas: Dict[str, Any]) -> str:
     ]
     return "\n".join(lines)
 
-def cmd_canvas_export(args: argparse.Namespace) -> None:
-    ep = get_active_endpoint()
-    data = api_get(ep, "/api/canvas")
+CANVAS_COLOR_MAP = {
+    "yellow": "#FEF08A",
+    "green": "#BBF7D0",
+    "blue": "#BAE6FD",
+    "purple": "#DDD6FE",
+    "pink": "#FCE7F3",
+    "amber": "#FEF3C7",
+    "orange": "#FEF3C7",
+    "gray": "#F3F4F6",
+    "slate": "#64748B",
+    "rose": "#E11D48",
+    "teal": "#14B8A6"
+}
 
-    if args.format == "json":
-        print(json.dumps(data, indent=2, ensure_ascii=False))
-    elif args.format == "stitch":
-        print("# Google Stitch — DESIGN.md")
-        print("\n## Canvas Architecture Blueprint")
-        print(f"- Exported At: {data.get('exportedAt', '')}")
-        print(f"- Total Frames: {len(data.get('frames', []))}")
-        print(f"- Total Stickies: {len(data.get('stickies', []))}")
-        print("\n### Frames:")
-        for f in data.get("frames", []):
-            print(f"- {f.get('title')} ({f.get('width')}x{f.get('height')})")
-        print("\n### Stickies & Architectural Directives:")
-        for s in data.get("stickies", []):
-            print(f"- {s.get('text')}")
-    elif args.format == "mermaid":
-        print(generate_canvas_mermaid(data))
-    elif args.format == "plantuml":
-        print(generate_canvas_plantuml(data))
-    elif args.format == "openapi":
-        print(generate_canvas_openapi(data))
+CANVAS_FRAME_COLOR_MAP = {
+    "blue": "#3B82F6",
+    "green": "#10B981",
+    "purple": "#8B5CF6",
+    "pink": "#EC4899",
+    "dark": "#2A2D34",
+    "amber": "#F59E0B",
+    "gray": "#64748B"
+}
+
+CANVAS_PROTO_COLOR_MAP = {
+    "REST": "#3B82F6",
+    "tRPC": "#8B5CF6",
+    "gRPC": "#10B981",
+    "WebSocket": "#EC4899",
+    "EventBus": "#F59E0B",
+    "GraphQL": "#E11D48",
+    "SQL": "#64748B",
+    "Queue": "#14B8A6"
+}
+
+def canvas_add_sticky(canvas: Dict[str, Any], text: str, color: Optional[str] = None, frame_name: Optional[str] = None, x: Optional[float] = None, y: Optional[float] = None) -> Dict[str, Any]:
+    hex_color = CANVAS_COLOR_MAP.get((color or "").lower(), color if (color and color.startswith("#")) else "#FEF08A")
+    sticky_id = str(uuid.uuid4())
+    frames = canvas.get("frames", [])
+    target_frame = None
+    if frame_name:
+        fn = frame_name.lower()
+        target_frame = next((f for f in frames if fn in f.get("title", "").lower() or fn == f.get("id", "").lower()), None)
+
+    if x is not None and y is not None:
+        pos_x, pos_y = float(x), float(y)
+    elif target_frame:
+        fx = target_frame.get("x", 100)
+        fy = target_frame.get("y", 100)
+        fw = target_frame.get("width", 360)
+        fh = target_frame.get("height", 420)
+        inside = [s for s in canvas.get("stickies", []) if fx <= (s.get("position", [0, 0])[0] if isinstance(s.get("position"), list) else s.get("position", {}).get("x", 0)) <= fx + fw and fy <= (s.get("position", [0, 0])[1] if isinstance(s.get("position"), list) else s.get("position", {}).get("y", 0)) <= fy + fh]
+        pos_x = fx + 40
+        pos_y = fy + 80 + len(inside) * 60
     else:
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        existing = canvas.get("stickies", [])
+        idx = len(existing)
+        pos_x = 120 + (idx % 4) * 240
+        pos_y = 120 + (idx // 4) * 160
+
+    new_sticky = {
+        "id": sticky_id,
+        "text": text,
+        "colorHex": hex_color,
+        "position": [pos_x, pos_y]
+    }
+    stickies = canvas.get("stickies", [])
+    stickies.append(new_sticky)
+    canvas["stickies"] = stickies
+    return new_sticky
+
+def canvas_add_frame(canvas: Dict[str, Any], title: str, color: Optional[str] = None, x: Optional[float] = None, y: Optional[float] = None, width: Optional[float] = None, height: Optional[float] = None) -> Dict[str, Any]:
+    hex_color = CANVAS_FRAME_COLOR_MAP.get((color or "").lower(), color if (color and color.startswith("#")) else "#3B82F6")
+    frame_id = str(uuid.uuid4())
+    frames = canvas.get("frames", [])
+
+    if x is not None and y is not None:
+        pos_x, pos_y = float(x), float(y)
+    else:
+        pos_x = 80 + len(frames) * 400
+        pos_y = 80
+
+    w = float(width or 360)
+    h = float(height or 440)
+
+    new_frame = {
+        "id": frame_id,
+        "title": title,
+        "colorHex": hex_color,
+        "x": pos_x,
+        "y": pos_y,
+        "width": w,
+        "height": h
+    }
+    frames.append(new_frame)
+    canvas["frames"] = frames
+    return new_frame
+
+def canvas_connect(canvas: Dict[str, Any], from_query: str, to_query: str, label: str = "", proto: str = "REST") -> Optional[Dict[str, Any]]:
+    stickies = canvas.get("stickies", [])
+    frames = canvas.get("frames", [])
+
+    def find_node(q: str) -> Optional[str]:
+        ql = q.lower()
+        for s in stickies:
+            if s.get("id", "").lower() == ql:
+                return s.get("id")
+        for f in frames:
+            if f.get("id", "").lower() == ql:
+                return f.get("id")
+        for s in stickies:
+            if ql in s.get("text", "").lower():
+                return s.get("id")
+        for f in frames:
+            if ql in f.get("title", "").lower():
+                return f.get("id")
+        return None
+
+    from_id = find_node(from_query)
+    to_id = find_node(to_query)
+
+    if not from_id or not to_id:
+        return None
+
+    proto_name = proto if proto in CANVAS_PROTO_COLOR_MAP else "REST"
+    proto_color = CANVAS_PROTO_COLOR_MAP.get(proto_name, "#3B82F6")
+    conn_id = str(uuid.uuid4())
+    conn_label = label or proto_name
+
+    new_conn = {
+        "id": conn_id,
+        "fromId": from_id,
+        "toId": to_id,
+        "label": conn_label,
+        "colorHex": proto_color
+    }
+
+    conns = canvas.get("connections", []) or canvas.get("connectors", [])
+    conns.append(new_conn)
+    canvas["connections"] = conns
+    return new_conn
+
+def canvas_delete_node(canvas: Dict[str, Any], target_query: str) -> int:
+    tq = target_query.lower()
+    del_count = 0
+    del_ids = set()
+
+    orig_s = canvas.get("stickies", [])
+    new_s = []
+    for s in orig_s:
+        if s.get("id", "").lower() == tq or tq in s.get("text", "").lower():
+            del_count += 1
+            del_ids.add(s.get("id"))
+        else:
+            new_s.append(s)
+    canvas["stickies"] = new_s
+
+    orig_f = canvas.get("frames", [])
+    new_f = []
+    for f in orig_f:
+        if f.get("id", "").lower() == tq or tq in f.get("title", "").lower():
+            del_count += 1
+            del_ids.add(f.get("id"))
+        else:
+            new_f.append(f)
+    canvas["frames"] = new_f
+
+    orig_c = canvas.get("connections", []) or canvas.get("connectors", [])
+    new_c = [c for c in orig_c if c.get("fromId") not in del_ids and c.get("toId") not in del_ids]
+    canvas["connections"] = new_c
+
+    return del_count
+
+def canvas_clear(canvas: Dict[str, Any]) -> None:
+    canvas["frames"] = []
+    canvas["stickies"] = []
+    canvas["connections"] = []
+    canvas["referenceCards"] = []
+
+def cmd_canvas(args: argparse.Namespace) -> None:
+    action = getattr(args, "action", "export")
+    ep = get_active_endpoint()
+    canvas = api_get(ep, "/api/canvas")
+
+    if action == "export":
+        fmt = getattr(args, "format", "stitch")
+        if fmt == "json":
+            print(json.dumps(canvas, indent=2, ensure_ascii=False))
+        elif fmt == "stitch":
+            print("# Google Stitch — DESIGN.md")
+            print("\n## Canvas Architecture Blueprint")
+            print(f"- Exported At: {canvas.get('exportedAt', '')}")
+            print(f"- Total Frames: {len(canvas.get('frames', []))}")
+            print(f"- Total Stickies: {len(canvas.get('stickies', []))}")
+            print("\n### Frames:")
+            for f in canvas.get("frames", []):
+                print(f"- {f.get('title')} ({f.get('width')}x{f.get('height')})")
+            print("\n### Stickies & Architectural Directives:")
+            for s in canvas.get("stickies", []):
+                print(f"- {s.get('text')}")
+        elif fmt == "mermaid":
+            print(generate_canvas_mermaid(canvas))
+        elif fmt == "plantuml":
+            print(generate_canvas_plantuml(canvas))
+        elif fmt == "openapi":
+            print(generate_canvas_openapi(canvas))
+        else:
+            print(json.dumps(canvas, indent=2, ensure_ascii=False))
+        return
+
+    if action == "add-sticky":
+        text = getattr(args, "target", "") or ""
+        if not text:
+            print("Error: sticky text is required (e.g. kite canvas add-sticky \"API Gateway\")")
+            sys.exit(1)
+        color = getattr(args, "color", "")
+        frame_name = getattr(args, "frame", "")
+        x = getattr(args, "x", None)
+        y = getattr(args, "y", None)
+
+        sticky = canvas_add_sticky(canvas, text, color=color, frame_name=frame_name, x=x, y=y)
+        canvas["replace"] = True
+        res = api_post(ep, "/api/canvas", canvas)
+        pos = sticky.get("position", [0, 0])
+        print(f"[+] Added sticky to canvas: \"{text}\" (ID: {sticky['id']}, pos: [{pos[0]:.0f}, {pos[1]:.0f}], status: {res.get('status', 'ok')})")
+        return
+
+    if action == "add-frame":
+        title = getattr(args, "target", "") or ""
+        if not title:
+            print("Error: frame title is required (e.g. kite canvas add-frame \"Domain Services\")")
+            sys.exit(1)
+        color = getattr(args, "color", "")
+        x = getattr(args, "x", None)
+        y = getattr(args, "y", None)
+        w = getattr(args, "width", 360)
+        h = getattr(args, "height", 420)
+
+        frame = canvas_add_frame(canvas, title, color=color, x=x, y=y, width=w, height=h)
+        canvas["replace"] = True
+        res = api_post(ep, "/api/canvas", canvas)
+        print(f"[+] Added frame to canvas: \"{title}\" (ID: {frame['id']}, size: {w:.0f}x{h:.0f}, status: {res.get('status', 'ok')})")
+        return
+
+    if action == "connect":
+        from_q = getattr(args, "target", "")
+        to_q = getattr(args, "target2", "")
+        if not from_q or not to_q:
+            print("Error: source and destination are required (e.g. kite canvas connect \"Client\" \"API\" --proto REST)")
+            sys.exit(1)
+        label = getattr(args, "label", "")
+        proto = getattr(args, "proto", "REST")
+
+        conn = canvas_connect(canvas, from_q, to_q, label=label, proto=proto)
+        if not conn:
+            print(f"Error: Could not locate nodes matching \"{from_q}\" and \"{to_q}\" on canvas.")
+            sys.exit(1)
+        canvas["replace"] = True
+        res = api_post(ep, "/api/canvas", canvas)
+        print(f"[+] Connected \"{from_q}\" -> \"{to_q}\" via {conn['label']} (proto: {proto}, color: {conn['colorHex']}, status: {res.get('status', 'ok')})")
+        return
+
+    if action == "delete":
+        target = getattr(args, "target", "")
+        if not target:
+            print("Error: target node ID, title, or text is required (e.g. kite canvas delete \"API Gateway\")")
+            sys.exit(1)
+        del_count = canvas_delete_node(canvas, target)
+        if del_count == 0:
+            print(f"Warning: No node matching \"{target}\" found on canvas.")
+            return
+        canvas["replace"] = True
+        res = api_post(ep, "/api/canvas", canvas)
+        print(f"[+] Deleted {del_count} node(s) and cleaned orphan connections matching \"{target}\" (status: {res.get('status', 'ok')})")
+        return
+
+    if action == "clear":
+        canvas_clear(canvas)
+        canvas["replace"] = True
+        res = api_post(ep, "/api/canvas", canvas)
+        print(f"[+] Canvas cleared completely (status: {res.get('status', 'ok')})")
+        return
+
+def cmd_canvas_export(args: argparse.Namespace) -> None:
+    cmd_canvas(args)
 
 def cmd_scaffold(args: argparse.Namespace) -> None:
     folder = os.path.abspath(args.folder)
@@ -2112,6 +2372,62 @@ def run_mcp_server() -> None:
                                         "once": {"type": "boolean", "description": "Capture a single snapshot of the cockpit dashboard", "default": True}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_add_sticky",
+                                "description": "Creates a new sticky note with architectural directives on the live Kite Canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "text": {"type": "string", "description": "Directive or note text"},
+                                        "color": {"type": "string", "description": "Color name (yellow, green, blue, purple, pink, amber, gray) or HEX code"},
+                                        "frame": {"type": "string", "description": "Target frame title or ID to contain the sticky"},
+                                        "x": {"type": "number", "description": "X position"},
+                                        "y": {"type": "number", "description": "Y position"}
+                                    },
+                                    "required": ["text"]
+                                }
+                            },
+                            {
+                                "name": "kite_add_frame",
+                                "description": "Creates a new architectural frame or boundary container on the live Kite Canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string", "description": "Frame title"},
+                                        "color": {"type": "string", "description": "Frame color name (blue, green, purple, pink, gray, dark) or HEX"},
+                                        "x": {"type": "number", "description": "X position"},
+                                        "y": {"type": "number", "description": "Y position"},
+                                        "width": {"type": "number", "description": "Frame width", "default": 360},
+                                        "height": {"type": "number", "description": "Frame height", "default": 420}
+                                    },
+                                    "required": ["title"]
+                                }
+                            },
+                            {
+                                "name": "kite_connect_nodes",
+                                "description": "Connects two nodes on the live Kite Canvas with a protocol-typed edge.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "fromNode": {"type": "string", "description": "Source node title, text substring, or ID"},
+                                        "toNode": {"type": "string", "description": "Destination node title, text substring, or ID"},
+                                        "label": {"type": "string", "description": "Connection label"},
+                                        "proto": {"type": "string", "enum": ["REST", "tRPC", "gRPC", "WebSocket", "EventBus", "GraphQL", "SQL", "Queue"], "default": "REST"}
+                                    },
+                                    "required": ["fromNode", "toNode"]
+                                }
+                            },
+                            {
+                                "name": "kite_delete_node",
+                                "description": "Deletes a sticky or frame from the live Kite Canvas by ID, title, or text substring.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "target": {"type": "string", "description": "Node title, text substring, or ID to delete"}
+                                    },
+                                    "required": ["target"]
+                                }
                             }
                         ]
                     }
@@ -2513,6 +2829,90 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_add_sticky":
+                    text = args.get("text", "")
+                    color = args.get("color")
+                    frame = args.get("frame")
+                    x = args.get("x")
+                    y = args.get("y")
+                    canvas = api_get(ep, "/api/canvas")
+                    st = canvas_add_sticky(canvas, text, color=color, frame_name=frame, x=x, y=y)
+                    canvas["replace"] = True
+                    res = api_post(ep, "/api/canvas", canvas)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": f"Sticky \"{text}\" added to canvas (ID: {st['id']}, status: {res.get('status', 'ok')})."}]
+                        }
+                    })
+
+                elif tool_name == "kite_add_frame":
+                    title = args.get("title", "")
+                    color = args.get("color")
+                    x = args.get("x")
+                    y = args.get("y")
+                    w = args.get("width", 360)
+                    h = args.get("height", 420)
+                    canvas = api_get(ep, "/api/canvas")
+                    fr = canvas_add_frame(canvas, title, color=color, x=x, y=y, width=w, height=h)
+                    canvas["replace"] = True
+                    res = api_post(ep, "/api/canvas", canvas)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": f"Frame \"{title}\" added to canvas (ID: {fr['id']}, size: {w}x{h}, status: {res.get('status', 'ok')})."}]
+                        }
+                    })
+
+                elif tool_name == "kite_connect_nodes":
+                    fn = args.get("fromNode", "")
+                    tn = args.get("toNode", "")
+                    label = args.get("label", "")
+                    proto = args.get("proto", "REST")
+                    canvas = api_get(ep, "/api/canvas")
+                    cn = canvas_connect(canvas, fn, tn, label=label, proto=proto)
+                    if not cn:
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {"code": -32000, "message": f"Could not find matching nodes for \"{fn}\" and \"{tn}\"."}
+                        })
+                    else:
+                        canvas["replace"] = True
+                        res = api_post(ep, "/api/canvas", canvas)
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "result": {
+                                "content": [{"type": "text", "text": f"Connected \"{fn}\" -> \"{tn}\" via {cn['label']} (status: {res.get('status', 'ok')})."}]
+                            }
+                        })
+
+                elif tool_name == "kite_delete_node":
+                    target = args.get("target", "")
+                    canvas = api_get(ep, "/api/canvas")
+                    cnt = canvas_delete_node(canvas, target)
+                    if cnt == 0:
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "result": {
+                                "content": [{"type": "text", "text": f"No node matching \"{target}\" found on canvas."}]
+                            }
+                        })
+                    else:
+                        canvas["replace"] = True
+                        res = api_post(ep, "/api/canvas", canvas)
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "result": {
+                                "content": [{"type": "text", "text": f"Deleted {cnt} node(s) matching \"{target}\" from canvas (status: {res.get('status', 'ok')})."}]
+                            }
+                        })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -2745,8 +3145,19 @@ def main() -> None:
     p_show.add_argument("query", help="ID or title substring to find")
 
     # canvas
-    p_canvas = subparsers.add_parser("canvas", help="Export canvas layout, diagrams, and API contracts")
-    p_canvas.add_argument("--format", choices=["stitch", "json", "mermaid", "plantuml", "openapi"], default="stitch", help="Output format (stitch, json, mermaid, plantuml, openapi)")
+    p_canvas = subparsers.add_parser("canvas", help="Inspect, export, and edit canvas topology, stickies, and frames")
+    p_canvas.add_argument("action", nargs="?", choices=["export", "add-sticky", "add-frame", "connect", "delete", "clear"], default="export", help="Canvas action (default: export)")
+    p_canvas.add_argument("target", nargs="?", default="", help="Target sticky text, frame title, or node ID")
+    p_canvas.add_argument("target2", nargs="?", default="", help="Destination node for connect action")
+    p_canvas.add_argument("--format", choices=["stitch", "json", "mermaid", "plantuml", "openapi"], default="stitch", help="Output format for export")
+    p_canvas.add_argument("--color", default="", help="Color name (yellow, green, blue, purple, pink, amber, gray, dark) or HEX code")
+    p_canvas.add_argument("--frame", default="", help="Parent frame title or ID to contain the sticky")
+    p_canvas.add_argument("--x", type=float, help="X coordinate on canvas")
+    p_canvas.add_argument("--y", type=float, help="Y coordinate on canvas")
+    p_canvas.add_argument("--width", type=float, default=360, help="Frame width (default: 360)")
+    p_canvas.add_argument("--height", type=float, default=420, help="Frame height (default: 420)")
+    p_canvas.add_argument("--label", default="", help="Label for connector")
+    p_canvas.add_argument("--proto", choices=["REST", "tRPC", "gRPC", "WebSocket", "EventBus", "GraphQL", "SQL", "Queue"], default="REST", help="Protocol for connector (default: REST)")
 
     # scaffold
     p_scaffold = subparsers.add_parser("scaffold", help="Scaffold project constitution and planning directory")

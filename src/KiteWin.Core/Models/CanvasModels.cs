@@ -152,6 +152,9 @@ public sealed class CanvasGraphSnapshot
     [JsonPropertyName("connections")]
     public List<CanvasConnection> Connections { get; set; } = [];
 
+    [JsonPropertyName("replace")]
+    public bool? Replace { get; set; }
+
     [JsonPropertyName("itemPositions")]
     public Dictionary<string, CanvasPoint> ItemPositions { get; set; } = [];
 }
