@@ -3154,6 +3154,179 @@ def cmd_snapshot(args: argparse.Namespace) -> None:
         except Exception:
             pass
 
+def run_tui(ep: str, once: bool = False) -> None:
+    if once or not sys.stdout.isatty():
+        status = api_get(ep, "/api/status")
+        ideas = api_get(ep, "/api/ideas").get("ideas", [])
+        canvas = api_get(ep, "/api/canvas")
+        ai_stat = check_llm_providers()
+
+        app_name = status.get('app', 'Kite')
+        lines = [
+            "========================================================================",
+            f"  KITE TERMINAL INTERFACE (TUI) - {app_name} ({ep})",
+            "========================================================================",
+            "",
+            f" [1] IDEAS REGISTER ({len(ideas)} total):",
+        ]
+        for idx, item in enumerate(ideas[:5]):
+            star = "[*]" if item.get("isStarred") else "[ ]"
+            title = item.get("title", "Untitled")
+            plat = item.get("platform", "web")
+            lines.append(f"     {star} {idx+1}. {title:<36} ({plat})")
+        if len(ideas) > 5:
+            lines.append(f"     ... and {len(ideas) - 5} more ideas")
+
+        lines.append("")
+        frames = canvas.get("frames", [])
+        stickies = canvas.get("stickies", [])
+        conns = canvas.get("connections", [])
+        lines.append(f" [2] LIVE CANVAS TOPOLOGY ({len(frames)} frames, {len(stickies)} stickies, {len(conns)} conns):")
+        for f in frames[:3]:
+            fw = f.get('width', 360)
+            fh = f.get('height', 420)
+            lines.append(f"     + Frame: \"{f.get('title')}\" ({fw}x{fh})")
+            f_stickies = [s for s in stickies if s.get('frame') == f.get('title') or s.get('frame') == f.get('id')]
+            for s in f_stickies[:2]:
+                lines.append(f"       - Sticky: \"{s.get('text')}\"")
+        for c in conns[:2]:
+            lines.append(f"     --> Connection: {c.get('fromId')} -> {c.get('toId')} ({c.get('label')})")
+
+        lines.append("")
+        lines.append(f" [3] AI RESILIENT FALLBACK CHAIN:")
+        rec = ai_stat.get("active_recommendation", "offline").upper()
+        lines.append(f"     Active Provider: {rec}")
+        for p in ai_stat.get("providers", []):
+            st = "ONLINE" if p.get("available") else "OFFLINE"
+            p_name = p.get('name')
+            p_det = p.get('details')
+            lines.append(f"     - [{st:<7}] {p_name}: {p_det}")
+
+        lines.append("")
+        lines.append("========================================================================")
+        lines.append(" Interactive navigation available when launched in standard TTY terminal.")
+        print("\n".join(lines))
+        return
+
+    import curses
+
+    def curses_main(stdscr):
+        curses.curs_set(0)
+        stdscr.timeout(1000)
+        current_tab = 1
+        selected_idx = 0
+
+        while True:
+            stdscr.clear()
+            h, w = stdscr.getmaxyx()
+            if h < 18 or w < 60:
+                stdscr.addstr(0, 0, "Terminal window too small for Kite TUI. Please resize.")
+                stdscr.refresh()
+                ch = stdscr.getch()
+                if ch in (ord('q'), ord('Q')):
+                    break
+                continue
+
+            status = api_get(ep, "/api/status")
+            ideas = api_get(ep, "/api/ideas").get("ideas", [])
+            canvas = api_get(ep, "/api/canvas")
+
+            app_name = status.get('app', 'Kite')
+            app_title = f" KITE TUI v1.3.0 | Station: {app_name} ({ep}) "
+            stdscr.attron(curses.A_REVERSE)
+            stdscr.addstr(0, 0, app_title.ljust(w - 1)[:w - 1])
+            stdscr.attroff(curses.A_REVERSE)
+
+            tabs_bar = f" [1] Ideas ({len(ideas)})  [2] Canvas Graph  [3] AI Router  [4] Telemetry "
+            stdscr.addstr(1, 0, tabs_bar.ljust(w - 1)[:w - 1])
+            stdscr.addstr(2, 0, ("-" * (w - 1))[:w - 1])
+
+            if current_tab == 1:
+                max_items = max(1, h - 6)
+                if selected_idx >= len(ideas):
+                    selected_idx = max(0, len(ideas) - 1)
+                for i in range(min(max_items, len(ideas))):
+                    item = ideas[i]
+                    star = "*" if item.get("isStarred") else " "
+                    title = item.get("title", "Untitled")
+                    plat = item.get("platform", "web")
+                    line_str = f" {star} {title:<40} [{plat}]"
+                    if i == selected_idx:
+                        stdscr.attron(curses.A_STANDOUT)
+                        stdscr.addstr(3 + i, 2, line_str[:w - 4])
+                        stdscr.attroff(curses.A_STANDOUT)
+                    else:
+                        stdscr.addstr(3 + i, 2, line_str[:w - 4])
+            elif current_tab == 2:
+                frames = canvas.get("frames", [])
+                stickies = canvas.get("stickies", [])
+                conns = canvas.get("connections", [])
+                stdscr.addstr(3, 2, f"Canvas: {len(frames)} frames, {len(stickies)} stickies, {len(conns)} connections")
+                row = 5
+                for f in frames[:max(1, (h - 8) // 2)]:
+                    stdscr.addstr(row, 2, f"+ Frame: {f.get('title')} ({f.get('colorHex')})")
+                    row += 1
+                for c in conns[:max(1, (h - 8) // 2)]:
+                    if row < h - 3:
+                        lbl = c.get('label')
+                        fid = c.get('fromId', '')[:8]
+                        tid = c.get('toId', '')[:8]
+                        stdscr.addstr(row, 4, f"-> Connection: {lbl} [{fid}.. -> {tid}..]")
+                        row += 1
+            elif current_tab == 3:
+                ai_stat = check_llm_providers()
+                rec_val = ai_stat.get('active_recommendation', '').upper()
+                stdscr.addstr(3, 2, f"Active Recommendation: {rec_val}")
+                row = 5
+                for p in ai_stat.get("providers", []):
+                    st = "ONLINE" if p.get("available") else "OFFLINE"
+                    p_name = p.get('name')
+                    p_det = p.get('details')
+                    stdscr.addstr(row, 2, f"[{st:<7}] {p_name}")
+                    row += 1
+                    stdscr.addstr(row, 4, f"Details: {p_det}")
+                    row += 2
+            elif current_tab == 4:
+                stdscr.addstr(3, 2, f"Station: {status.get('app')}")
+                stdscr.addstr(4, 2, f"Port:    {status.get('port')}")
+                stdscr.addstr(5, 2, f"Status:  {status.get('status')}")
+
+            footer = " [1-4] Switch Tabs | [j/k/Up/Down] Navigate | [s] Toggle Star | [q] Quit "
+            stdscr.attron(curses.A_REVERSE)
+            stdscr.addstr(h - 1, 0, footer.ljust(w - 1)[:w - 1])
+            stdscr.attroff(curses.A_REVERSE)
+            stdscr.refresh()
+
+            try:
+                ch = stdscr.getch()
+            except Exception:
+                break
+
+            if ch in (ord('q'), ord('Q')):
+                break
+            elif ch in (ord('1'), ord('2'), ord('3'), ord('4')):
+                current_tab = int(chr(ch))
+            elif ch in (curses.KEY_UP, ord('k')):
+                if selected_idx > 0:
+                    selected_idx -= 1
+            elif ch in (curses.KEY_DOWN, ord('j')):
+                if selected_idx < len(ideas) - 1:
+                    selected_idx += 1
+            elif ch in (ord('s'), ord('S')) and ideas:
+                cur_item = ideas[selected_idx]
+                cur_item["isStarred"] = not cur_item.get("isStarred", False)
+                api_post(ep, "/api/ideas", {"ideas": [cur_item]})
+
+    try:
+        curses.wrapper(curses_main)
+    except Exception as ex:
+        print(f"TUI error: {ex}")
+
+def cmd_tui(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    once = getattr(args, "once", False)
+    run_tui(ep, once=once)
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -4629,6 +4802,10 @@ def main() -> None:
     p_snap.add_argument("--out", default="canvas-snapshot.svg", help="Output SVG file path (default: canvas-snapshot.svg)")
     p_snap.add_argument("--clipboard", action="store_true", help="Copy SVG markup to clipboard (macOS)")
 
+    # tui
+    p_tui = subparsers.add_parser("tui", help="Launch interactive Terminal User Interface (TUI) for Kite Station")
+    p_tui.add_argument("--once", action="store_true", help="Render single dashboard snapshot and exit")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -4693,6 +4870,8 @@ def main() -> None:
         cmd_ai_generate(args)
     elif args.subcommand == "snapshot":
         cmd_snapshot(args)
+    elif args.subcommand == "tui":
+        cmd_tui(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
