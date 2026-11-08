@@ -75,6 +75,12 @@
                             <TextBlock Text="Авто-Топология" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <ToggleButton x:Name="SimulationBtn" Click="OnSimulationToggled">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon x:Name="SimulationIcon" Glyph="&#xE768;" FontSize="12" />
+                            <TextBlock x:Name="SimulationText" Text="Симуляция" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </ToggleButton>
                     <AppBarSeparator />
                     <Button x:Name="GroupSelectedBtn" Click="OnGroupSelectedClicked">
                         <StackPanel Orientation="Horizontal" Spacing="8">

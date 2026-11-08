@@ -21,6 +21,9 @@ public sealed partial class CanvasPage : Page
     private double _zoom = 1.0;
     private bool _isMarqueeActive;
     private Windows.Foundation.Point _marqueeStart;
+    private bool _isSimulationActive;
+    private DispatcherTimer? _simulationTimer;
+    private double _simulationPhase;
 
     public CanvasPage()
     {
@@ -48,6 +51,10 @@ public sealed partial class CanvasPage : Page
 
     private void OnPageUnloaded(object sender, RoutedEventArgs e)
     {
+        _simulationTimer?.Stop();
+        if (_simulationTimer != null) _simulationTimer.Tick -= OnSimulationTick;
+        _simulationTimer = null;
+
         MainCanvas.PointerPressed -= OnCanvasPointerPressed;
         MainCanvas.PointerMoved -= OnCanvasPointerMoved;
         MainCanvas.PointerReleased -= OnCanvasPointerReleased;
@@ -162,35 +169,85 @@ public sealed partial class CanvasPage : Page
         // 2. Draw Connections
         foreach (var conn in _canvasStore.Snapshot.Connections)
         {
+            var centerFrom = GetNodeCenter(conn.FromId) ?? new Windows.Foundation.Point(340, 420);
+            var centerTo = GetNodeCenter(conn.ToId) ?? new Windows.Foundation.Point(560, 350);
+
+            double dx = centerTo.X - centerFrom.X;
+            double dy = centerTo.Y - centerFrom.Y;
+
+            Windows.Foundation.Point startPt;
+            Windows.Foundation.Point endPt;
+
+            if (Math.Abs(dx) > Math.Abs(dy))
+            {
+                startPt = new Windows.Foundation.Point(centerFrom.X + (dx > 0 ? 80 : -80), centerFrom.Y);
+                endPt = new Windows.Foundation.Point(centerTo.X + (dx > 0 ? -80 : 80), centerTo.Y);
+            }
+            else
+            {
+                startPt = new Windows.Foundation.Point(centerFrom.X, centerFrom.Y + (dy > 0 ? 60 : -60));
+                endPt = new Windows.Foundation.Point(centerTo.X, centerTo.Y + (dy > 0 ? -60 : 60));
+            }
+
+            double cdx = (endPt.X - startPt.X) * 0.5;
+            var p0 = startPt;
+            var p1 = new Windows.Foundation.Point(startPt.X + cdx, startPt.Y);
+            var p2 = new Windows.Foundation.Point(endPt.X - cdx, endPt.Y);
+            var p3 = endPt;
+
             var path = new Microsoft.UI.Xaml.Shapes.Path
             {
-                Stroke = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.6)),
+                Stroke = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.7)),
                 StrokeThickness = 2,
-                StrokeDashArray = [4, 2]
+                StrokeDashArray = _isSimulationActive ? [4, 4] : [6, 4]
             };
 
             var geom = new PathGeometry();
-            var fig = new PathFigure { StartPoint = new Windows.Foundation.Point(340, 420) };
-            fig.Segments.Add(new BezierSegment
-            {
-                Point1 = new Windows.Foundation.Point(450, 420),
-                Point2 = new Windows.Foundation.Point(490, 360),
-                Point3 = new Windows.Foundation.Point(560, 350)
-            });
+            var fig = new PathFigure { StartPoint = p0 };
+            fig.Segments.Add(new BezierSegment { Point1 = p1, Point2 = p2, Point3 = p3 });
             geom.Figures.Add(fig);
             path.Data = geom;
             Canvas.SetZIndex(path, 2);
             MainCanvas.Children.Add(path);
 
-            if (!string.IsNullOrEmpty(conn.Label))
+            // Simulation Throughput Particle Stream
+            if (_isSimulationActive)
+            {
+                for (int idx = 0; idx < 2; idx++)
+                {
+                    double phase = (idx * 0.5);
+                    double t = (_simulationPhase + phase) % 1.0;
+                    double u = 1.0 - t;
+                    double tt = t * t;
+                    double uu = u * u;
+                    double uuu = uu * u;
+                    double ttt = tt * t;
+
+                    double px = uuu * p0.X + 3 * uu * t * p1.X + 3 * u * tt * p2.X + ttt * p3.X;
+                    double py = uuu * p0.Y + 3 * uu * t * p1.Y + 3 * u * tt * p2.Y + ttt * p3.Y;
+
+                    var particle = new Ellipse
+                    {
+                        Width = 8,
+                        Height = 8,
+                        Fill = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.95))
+                    };
+                    Canvas.SetLeft(particle, px - 4); // grid: ok simulation particle
+                    Canvas.SetTop(particle, py - 4); // grid: ok simulation particle
+                    Canvas.SetZIndex(particle, 4);
+                    MainCanvas.Children.Add(particle);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(conn.Label) || _isSimulationActive)
             {
                 var labelPill = new Border
                 {
-                    Background = new SolidColorBrush(Colors.White),
-                    BorderBrush = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.6)),
+                    Background = Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush,
+                    BorderBrush = new SolidColorBrush(ColorFromHex(conn.ColorHex, 0.7)),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(8, 2, 8, 2)
+                    Padding = new Thickness(8, 4, 8, 4)
                 };
 
                 var flyout = new MenuFlyout();
@@ -222,17 +279,48 @@ public sealed partial class CanvasPage : Page
                 labelPill.ContextFlyout = flyout;
                 labelPill.Tapped += (s, e) => flyout.ShowAt(labelPill);
 
-                var tb = new TextBlock
+                var badgePanel = new StackPanel
                 {
-                    Text = conn.Label,
-                    FontSize = 10,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(ColorFromHex(conn.ColorHex, 1.0))
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 4
                 };
-                labelPill.Child = tb;
 
-                Canvas.SetLeft(labelPill, 435); // grid: ok freeform canvas
-                Canvas.SetTop(labelPill, 385); // grid: ok freeform canvas
+                if (_isSimulationActive)
+                {
+                    badgePanel.Children.Add(new Ellipse
+                    {
+                        Width = 4,
+                        Height = 4,
+                        Fill = new SolidColorBrush(Colors.Green),
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    badgePanel.Children.Add(new TextBlock
+                    {
+                        Text = $"{conn.Label}  1.2k rps",
+                        FontSize = 10,
+                        FontFamily = new FontFamily("Cascadia Code, Consolas"),
+                        FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                        Foreground = new SolidColorBrush(Colors.Green),
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                }
+                else
+                {
+                    badgePanel.Children.Add(new TextBlock
+                    {
+                        Text = conn.Label,
+                        FontSize = 10,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush(ColorFromHex(conn.ColorHex, 1.0)),
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                }
+                labelPill.Child = badgePanel;
+
+                var midX = (startPt.X + endPt.X) / 2;
+                var midY = (startPt.Y + endPt.Y) / 2;
+                Canvas.SetLeft(labelPill, midX - 36); // grid: ok freeform canvas
+                Canvas.SetTop(labelPill, midY - 12); // grid: ok freeform canvas
                 Canvas.SetZIndex(labelPill, 3);
                 MainCanvas.Children.Add(labelPill);
             }
@@ -909,6 +997,50 @@ public sealed partial class CanvasPage : Page
     {
         CanvasToast.Message = message;
         CanvasToast.IsOpen = true;
+    }
+
+    private Windows.Foundation.Point? GetNodeCenter(string nodeId)
+    {
+        var sticky = _canvasStore.Snapshot.Stickies.FirstOrDefault(s => s.Id == nodeId);
+        if (sticky != null)
+        {
+            return new Windows.Foundation.Point(sticky.X + sticky.Width / 2, sticky.Y + sticky.Height / 2);
+        }
+        var frame = _canvasStore.Snapshot.Frames.FirstOrDefault(f => f.Id == nodeId);
+        if (frame != null)
+        {
+            return new Windows.Foundation.Point(frame.X + frame.Width / 2, frame.Y + frame.Height / 2);
+        }
+        return null;
+    }
+
+    private void OnSimulationToggled(object sender, RoutedEventArgs e)
+    {
+        _isSimulationActive = SimulationBtn.IsChecked == true;
+        SimulationText.Text = _isSimulationActive ? "Потоки" : "Симуляция";
+        SimulationIcon.Glyph = _isSimulationActive ? "\uE769" : "\uE768";
+
+        if (_isSimulationActive)
+        {
+            _simulationTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+            _simulationTimer.Tick += OnSimulationTick;
+            _simulationTimer.Start();
+            ShowToast("Запущена симуляция трафика и пропускной способности (RPS/QPS)");
+        }
+        else
+        {
+            _simulationTimer?.Stop();
+            if (_simulationTimer != null) _simulationTimer.Tick -= OnSimulationTick;
+            _simulationTimer = null;
+            ShowToast("Симуляция остановлена");
+        }
+        RenderCanvas();
+    }
+
+    private void OnSimulationTick(object? sender, object e)
+    {
+        _simulationPhase = (_simulationPhase + 0.04) % 1.0;
+        RenderCanvas();
     }
 
     private static Windows.UI.Color ColorFromHex(string hex, double opacity = 1.0)
