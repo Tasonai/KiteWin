@@ -5,9 +5,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="KiteWin">
 
-    <!-- Mica: the window picks up the desktop tint, like Windows' own apps. -->
+    <!-- Mica: neutral layered BaseAlt backdrop following Apple HIG monochrome standards. -->
     <Window.SystemBackdrop>
-        <MicaBackdrop />
+        <MicaBackdrop Kind="BaseAlt" />
     </Window.SystemBackdrop>
 
     <Grid x:Name="Root">

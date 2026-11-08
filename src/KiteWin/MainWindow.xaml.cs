@@ -1,10 +1,12 @@
 using KiteWin.Pages;
 using KiteWin.Services;
 using KiteWin.UI;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
+using Windows.UI;
 
 namespace KiteWin;
 
@@ -83,7 +85,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// "system", "light", or "dark". Also sets the caption buttons to match.
+    /// "system", "light", or "dark". Also sets the caption buttons on the right to match the monochrome theme.
     /// </summary>
     public void ApplyTheme(string mode)
     {
@@ -94,6 +96,30 @@ public sealed partial class MainWindow : Window
             "dark" => TitleBarTheme.Dark,
             _ => TitleBarTheme.UseDefaultAppMode,
         };
+        UpdateTitleBarButtons(mode);
+    }
+
+    private void UpdateTitleBarButtons(string mode)
+    {
+        var isDark = mode == "dark" || (mode == "system" && Root.ActualTheme == ElementTheme.Dark);
+        var titleBar = AppWindow.TitleBar;
+        titleBar.ButtonBackgroundColor = Colors.Transparent;
+        titleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+
+        if (isDark)
+        {
+            titleBar.ButtonForegroundColor = Color.FromArgb(255, 240, 240, 240);
+            titleBar.ButtonHoverForegroundColor = Colors.White;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(32, 255, 255, 255);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(160, 160, 160, 160);
+        }
+        else
+        {
+            titleBar.ButtonForegroundColor = Color.FromArgb(255, 28, 28, 30);
+            titleBar.ButtonHoverForegroundColor = Colors.Black;
+            titleBar.ButtonHoverBackgroundColor = Color.FromArgb(20, 0, 0, 0);
+            titleBar.ButtonInactiveForegroundColor = Color.FromArgb(160, 120, 120, 120);
+        }
     }
 
     public void ReapplyAccent() => Theme.Reapply(Root);

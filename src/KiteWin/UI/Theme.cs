@@ -13,10 +13,12 @@ public sealed record AccentChoice(string Id, string Name, Color? Base);
 /// which this file feeds.
 public static class Theme
 {
-    public const string DefaultId = "system";
+    public const string DefaultId = "monochrome";
 
     public static readonly AccentChoice[] All =
     [
+        new("monochrome", "Monochrome (Mac HIG)", Hex(0x7C7C84)),
+        new("graphite", "Graphite", Hex(0x5D5A58)),
         new("system", "Windows default", null),
         new("blue", "Blue", Hex(0x0067C0)),
         new("purple", "Purple", Hex(0x8764B8)),
@@ -25,7 +27,6 @@ public static class Theme
         new("orange", "Orange", Hex(0xCA5010)),
         new("green", "Green", Hex(0x0F7B0F)),
         new("teal", "Teal", Hex(0x038387)),
-        new("graphite", "Graphite", Hex(0x5D5A58)),
     ];
 
     public static readonly (string Id, string Name)[] Modes =
