@@ -11,6 +11,35 @@
                 <ResourceDictionary Source="ms-appx:///UI/Space.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#F2F2F7" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#F2F2F7" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorSecondaryBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorTertiaryBrush" Color="#E5E5EA" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#F8F8FA" />
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#E5E5EA" />
+                    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#F2F2F7" />
+                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#EBEBF0" />
+                    <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#636366" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorSecondaryBrush" Color="#2C2C2E" />
+                    <SolidColorBrush x:Key="SolidBackgroundFillColorTertiaryBrush" Color="#3A3A3C" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#2C2C2E" />
+                    <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#3A3A3C" />
+                    <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#38383A" />
+                    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#252528" />
+                    <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#F2F2F7" />
+                    <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#8E8E93" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <ui:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
             <ui:InverseVisibilityConverter x:Key="InverseVisibilityConverter" />
             <ui:InverseBoolConverter x:Key="InverseBoolConverter" />

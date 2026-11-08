@@ -1,5 +1,6 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
 namespace KiteWin.UI;
@@ -17,20 +18,20 @@ public static class Theme
 
     public static readonly AccentChoice[] All =
     [
-        new("monochrome", "Monochrome (Mac HIG)", Hex(0x7C7C84)),
-        new("graphite", "Graphite", Hex(0x5D5A58)),
-        new("system", "Windows default", null),
-        new("blue", "Blue", Hex(0x0067C0)),
-        new("purple", "Purple", Hex(0x8764B8)),
-        new("pink", "Pink", Hex(0xBF0077)),
-        new("red", "Red", Hex(0xC42B1C)),
-        new("orange", "Orange", Hex(0xCA5010)),
-        new("green", "Green", Hex(0x0F7B0F)),
-        new("teal", "Teal", Hex(0x038387)),
+        new("monochrome", "Монохромный (Mac HIG)", Hex(0x7C7C84)),
+        new("graphite", "Графитовый", Hex(0x5D5A58)),
+        new("system", "Системный (Windows)", null),
+        new("blue", "Синий", Hex(0x0067C0)),
+        new("purple", "Фиолетовый", Hex(0x8764B8)),
+        new("pink", "Розовый", Hex(0xBF0077)),
+        new("red", "Красный", Hex(0xC42B1C)),
+        new("orange", "Оранжевый", Hex(0xCA5010)),
+        new("green", "Зеленый", Hex(0x0F7B0F)),
+        new("teal", "Бирюзовый", Hex(0x038387)),
     ];
 
     public static readonly (string Id, string Name)[] Modes =
-        [("system", "Use system setting"), ("light", "Light"), ("dark", "Dark")];
+        [("system", "Системная тема"), ("light", "Светлая монохромная (Mac)"), ("dark", "Темная монохромная (Mac)")];
 
     /// Overrides the seven SystemAccentColor shades WinUI derives every accent brush from.
     /// Light mode fills with Dark1 and writes text with Dark2; dark mode fills with Light2
@@ -38,9 +39,10 @@ public static class Theme
     public static void ApplyAccent(string id)
     {
         var resources = Application.Current.Resources;
-        var choice = All.FirstOrDefault(a => a.Id == id);
+        var choice = All.FirstOrDefault(a => a.Id == id) ?? All[0];
         string[] keys = ["SystemAccentColor", "SystemAccentColorLight1", "SystemAccentColorLight2", "SystemAccentColorLight3",
-                         "SystemAccentColorDark1", "SystemAccentColorDark2", "SystemAccentColorDark3"];
+                         "SystemAccentColorDark1", "SystemAccentColorDark2", "SystemAccentColorDark3",
+                         "AccentFillColorDefaultBrush", "AccentFillColorSecondaryBrush", "AccentFillColorTertiaryBrush"];
         if (choice?.Base is not Color c)
         {
             // Remove throws on a key that is not there, and an exception this early kills the app.
@@ -54,6 +56,10 @@ public static class Theme
         resources["SystemAccentColorDark1"] = Mix(c, Colors.Black, 0.15);
         resources["SystemAccentColorDark2"] = Mix(c, Colors.Black, 0.35);
         resources["SystemAccentColorDark3"] = Mix(c, Colors.Black, 0.55);
+
+        resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(c);
+        resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(Mix(c, Colors.White, 0.15));
+        resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(Mix(c, Colors.White, 0.30));
     }
 
     public static ElementTheme Element(string mode) => mode switch

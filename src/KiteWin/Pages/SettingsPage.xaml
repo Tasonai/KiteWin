@@ -58,7 +58,7 @@
                     ui:GridProbe.Area="page"
                     ui:GridProbe.Name="appearance" />
                 <StackPanel Spacing="{StaticResource SpaceXs}" ui:GridProbe.Area="page" ui:GridProbe.Name="appearance-cards">
-                    <toolkit:SettingsCard Description="Светлая, темная или системная тема Windows 11 с эффектом Mica." Header="Тема приложения">
+                    <toolkit:SettingsCard Description="Светлая или темная монохромная тема по стандартам Apple HIG." Header="Тема приложения">
                         <toolkit:SettingsCard.HeaderIcon>
                             <FontIcon Glyph="&#xE793;" />
                         </toolkit:SettingsCard.HeaderIcon>
