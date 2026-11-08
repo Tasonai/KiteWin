@@ -5020,6 +5020,287 @@ def cmd_audit_threats(args: argparse.Namespace) -> None:
     else:
         print(format_threat_model_report(res, use_ansi=sys.stdout.isatty()))
 
+# ==================== ARCHITECTURE MIGRATION & REFACTORING ENGINE ====================
+
+def run_architecture_refactor(
+    canvas: Dict[str, Any],
+    target_frame: Optional[str] = None,
+    apply_split: bool = False,
+    ep: Optional[str] = None
+) -> Dict[str, Any]:
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+    connections = canvas.get("connections", [])
+
+    frame_metrics = []
+    for f in frames:
+        fx = f.get("x", 0)
+        fy = f.get("y", 0)
+        fw = f.get("width", 320)
+        fh = f.get("height", 240)
+        fid = f.get("id", "")
+        ftitle = f.get("title", "Frame")
+
+        f_stickies = [s for s in stickies if fx <= s.get("position", [0, 0])[0] <= fx + fw and fy <= s.get("position", [0, 0])[1] <= fy + fh]
+        s_ids = {s.get("id") for s in f_stickies} | {fid}
+
+        fan_in = sum(1 for c in connections if c.get("toId") in s_ids)
+        fan_out = sum(1 for c in connections if c.get("fromId") in s_ids)
+        ca = fan_in
+        ce = fan_out
+        instability = round(ce / (ca + ce), 2) if (ca + ce) > 0 else 0.5
+        complexity = round(len(f_stickies) * 1.5 + (ca + ce) * 1.0, 1)
+
+        is_monolith = (len(f_stickies) >= 3 or complexity >= 5.0)
+        priority = "HIGH" if complexity >= 5.0 else ("MEDIUM" if complexity >= 3.0 else "LOW")
+
+        frame_metrics.append({
+            "id": fid,
+            "title": ftitle,
+            "x": fx,
+            "y": fy,
+            "width": fw,
+            "height": fh,
+            "stickies_count": len(f_stickies),
+            "stickies": f_stickies,
+            "fan_in": fan_in,
+            "fan_out": fan_out,
+            "instability": instability,
+            "complexity_score": complexity,
+            "is_monolith_candidate": is_monolith,
+            "priority": priority
+        })
+
+    frame_metrics.sort(key=lambda x: x["complexity_score"], reverse=True)
+
+    selected = None
+    if target_frame:
+        q = target_frame.lower()
+        selected = next((fm for fm in frame_metrics if q in fm["title"].lower() or q in fm["id"].lower()), None)
+
+    if not selected and frame_metrics:
+        selected = frame_metrics[0]
+
+    split_applied = False
+    new_subservices = []
+    if selected:
+        s_list = selected["stickies"]
+        split_idx = max(1, len(s_list) // 2)
+        group_a = s_list[:split_idx]
+        group_b = s_list[split_idx:]
+
+        sub_a_title = f"{selected['title']} - Core Domain"
+        sub_b_title = f"{selected['title']} - State & Repository"
+
+        new_subservices = [
+            {
+                "title": sub_a_title,
+                "role": "Ingress & Domain Execution Logic",
+                "stickies": [s.get("text", "") for s in group_a]
+            },
+            {
+                "title": sub_b_title,
+                "role": "Persistence, Caching & Encapsulated WAL",
+                "stickies": [s.get("text", "") for s in group_b]
+            }
+        ]
+
+        if apply_split and ep and len(s_list) >= 2:
+            import time
+            now = int(time.time())
+            base_x = selected["x"]
+            base_y = selected["y"]
+            w = max(320, selected["width"] // 2 - 20)
+            h = selected["height"]
+
+            fid_a = f"split-a-{now}"
+            fid_b = f"split-b-{now}"
+
+            frame_a = {
+                "id": fid_a,
+                "title": sub_a_title,
+                "colorHex": "#3B82F6",
+                "x": base_x,
+                "y": base_y,
+                "width": w,
+                "height": h
+            }
+            frame_b = {
+                "id": fid_b,
+                "title": sub_b_title,
+                "colorHex": "#10B981",
+                "x": base_x + w + 40,
+                "y": base_y,
+                "width": w,
+                "height": h
+            }
+
+            updated_stickies = []
+            for s in stickies:
+                if any(sa.get("id") == s.get("id") for sa in group_a):
+                    s_copy = dict(s)
+                    s_copy["position"] = [base_x + 20, base_y + 60 + (len(updated_stickies) % 3) * 60]
+                    updated_stickies.append(s_copy)
+                elif any(sb.get("id") == s.get("id") for sb in group_b):
+                    s_copy = dict(s)
+                    s_copy["position"] = [base_x + w + 60, base_y + 60 + (len(updated_stickies) % 3) * 60]
+                    updated_stickies.append(s_copy)
+                else:
+                    updated_stickies.append(s)
+
+            remaining_frames = [f for f in frames if f.get("id") != selected["id"]]
+            remaining_frames.extend([frame_a, frame_b])
+
+            new_conns = list(connections)
+            if group_a and group_b:
+                new_conns.append({
+                    "id": f"conn-split-{now}",
+                    "fromId": group_a[0].get("id"),
+                    "toId": group_b[0].get("id"),
+                    "label": "Encapsulates",
+                    "colorHex": "#10B981"
+                })
+
+            payload = {
+                "replace": True,
+                "frames": remaining_frames,
+                "stickies": updated_stickies,
+                "connections": new_conns,
+                "referenceCards": canvas.get("referenceCards", [])
+            }
+            api_post(ep, "/api/canvas", payload)
+            split_applied = True
+
+    return {
+        "status": "success",
+        "total_frames": len(frames),
+        "monolith_candidates_count": sum(1 for fm in frame_metrics if fm["is_monolith_candidate"]),
+        "frame_metrics": frame_metrics,
+        "selected_target": selected,
+        "proposed_subservices": new_subservices,
+        "split_applied": split_applied
+    }
+
+def generate_migration_plan_md(refactor_res: Dict[str, Any], title: str = "Kite Architecture") -> str:
+    target = refactor_res.get("selected_target") or {}
+    t_title = target.get("title", "Monolithic Subsystem")
+    subservices = refactor_res.get("proposed_subservices", [])
+
+    lines = []
+    lines.append(f"# ZERO-DOWNTIME ARCHITECTURAL MIGRATION PLAN: {t_title.upper()}")
+    lines.append("")
+    lines.append("> Generated by Kite Architecture Refactoring Assistant following Google DeepMind Antigravity Craftsmanship Standard.")
+    lines.append("")
+    lines.append("## 1. Architectural Baseline & Complexity Profile")
+    lines.append(f"- **Target Monolith Frame:** `{t_title}` (ID: `{target.get('id', 'N/A')}`)")
+    lines.append(f"- **Complexity Score:** `{target.get('complexity_score', 0)}` (Stickies: {target.get('stickies_count', 0)}, Fan-In: {target.get('fan_in', 0)}, Fan-Out: {target.get('fan_out', 0)})")
+    lines.append(f"- **Coupling Instability (I):** `{target.get('instability', 0.5)}`")
+    lines.append(f"- **Refactor Priority:** `{target.get('priority', 'MEDIUM')}`")
+    lines.append("")
+    lines.append("## 2. Proposed Sub-Service Decomposition")
+    if subservices:
+        for idx, sub in enumerate(subservices):
+            lines.append(f"### Sub-Service {chr(65 + idx)}: {sub.get('title')}")
+            lines.append(f"- **Domain Boundary:** {sub.get('role')}")
+            lines.append("- **Encapsulated Directives:**")
+            for st in sub.get("stickies", []):
+                lines.append(f"  + {st}")
+            lines.append("")
+    lines.append("## 3. 4-Phase Expand & Contract Migration Strategy")
+    lines.append("")
+    lines.append("### Phase 1: Expand (Parallel Infrastructure)")
+    lines.append("- Scaffold new domain service boundaries without altering current consumer routes.")
+    lines.append("- Introduce feature flag: `FEATURE_FLAG_MODULAR_ROUTING = process.env.ENABLE_MODULAR === 'true';`.")
+    lines.append("- Establish typed boundary interface:")
+    lines.append("```ts")
+    lines.append("export interface ModularServiceBoundary {")
+    lines.append("  execute(payload: Record<string, unknown>): Promise<{ success: boolean; data: unknown }>;")
+    lines.append("}")
+    lines.append("```")
+    lines.append("")
+    lines.append("### Phase 2: Shadow Traffic & Dual-Write")
+    lines.append("- Mirror ingress queries and mutations asynchronously to both legacy monolith and new sub-services.")
+    lines.append("- Compare output hashes and verify zero drift between data persistence layers.")
+    lines.append("```ts")
+    lines.append("// Shadow traffic comparator")
+    lines.append("const [legacyRes, modularRes] = await Promise.all([")
+    lines.append("  legacyHandler(req),")
+    lines.append("  shadowHandler(req).catch(err => logShadowError(err))")
+    lines.append("]);")
+    lines.append("assertParity(legacyRes, modularRes);")
+    lines.append("```")
+    lines.append("")
+    lines.append("### Phase 3: Primary Cutover")
+    lines.append("- Switch primary traffic routing to new modular sub-services.")
+    lines.append("- Maintain 1-click fallback to legacy frame if error rate exceeds 0.05% SLA.")
+    lines.append("")
+    lines.append("### Phase 4: Contract (Monolith Cleanup)")
+    lines.append("- Remove deprecated monolithic handlers and dead code paths.")
+    lines.append("- Clean up temporary feature flags and dual-write buffers.")
+    lines.append("")
+    lines.append("## 4. Rollback & Invariant Checklist")
+    lines.append("- [ ] Snapshot taken via `kite replay --record \"Pre-migration baseline\"`")
+    lines.append("- [ ] Zero Emojis and strict 4pt/4epx alignment preserved across all generated files.")
+    lines.append("- [ ] Automated stress benchmark verifies p95 latency does not regress (`kite benchmark`).")
+    return "\n".join(lines) + "\n"
+
+def format_refactor_report(refactor_res: Dict[str, Any], use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_YELLOW = "\033[1;33m" if use_ansi else ""
+    C_RED = "\033[1;31m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE ARCHITECTURE REFACTORING & COUPLING AUDIT ==={C_RESET}")
+    lines.append("-" * 88)
+    cand_count = refactor_res.get("monolith_candidates_count", 0)
+    lines.append(f"Frames Analyzed:      {refactor_res.get('total_frames')} total | Monolith Candidates: {C_BOLD}{cand_count}{C_RESET}")
+    if refactor_res.get("split_applied"):
+        lines.append(f"{C_GREEN}[+] Live Decomposition Applied: Monolith frame split into 2 modular sub-services on canvas.{C_RESET}")
+    lines.append("-" * 88)
+    lines.append(f"{'FRAME TITLE':<36} {'STICKIES':<10} {'FAN-IN':<8} {'FAN-OUT':<9} {'SCORE':<8} {'PRIORITY'}")
+    lines.append("-" * 88)
+    for fm in refactor_res.get("frame_metrics", []):
+        pri = fm.get("priority", "LOW")
+        pri_color = C_RED if pri == "HIGH" else (C_YELLOW if pri == "MEDIUM" else C_GREEN)
+        pri_str = f"{pri_color}{pri:<8}{C_RESET}"
+        score_str = f"{fm.get('complexity_score', 0):>5.1f}"
+        t = fm.get("title", "")[:35]
+        s_cnt = f"{fm.get('stickies_count', 0):>4}"
+        fi = f"{fm.get('fan_in', 0):>4}"
+        fo = f"{fm.get('fan_out', 0):>4}"
+        lines.append(f"{t:<36} {s_cnt:<10} {fi:<8} {fo:<9} {score_str:<8} {pri_str}")
+    lines.append("-" * 88)
+
+    target = refactor_res.get("selected_target")
+    if target:
+        lines.append(f"Primary Target for Decomposition: {C_BOLD}{target.get('title')}{C_RESET} (Complexity: {target.get('complexity_score')})")
+        for idx, sub in enumerate(refactor_res.get("proposed_subservices", [])):
+            lines.append(f"  + Sub-Service {chr(65 + idx)}: {sub.get('title')} ({sub.get('role')})")
+    lines.append("-" * 88)
+    return "\n".join(lines)
+
+def cmd_refactor(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    canvas = api_get(ep, "/api/canvas")
+    target_frame = getattr(args, "frame", None)
+    apply_split = getattr(args, "split", False)
+    out_path = getattr(args, "out", None)
+    json_out = getattr(args, "json", False)
+
+    res = run_architecture_refactor(canvas, target_frame=target_frame, apply_split=apply_split, ep=ep)
+    if out_path:
+        md = generate_migration_plan_md(res)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(md)
+        print(f"Zero-Downtime Migration Plan generated and saved to {os.path.abspath(out_path)} ({len(md)} bytes).")
+    elif json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(format_refactor_report(res, use_ansi=sys.stdout.isatty()))
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -5640,6 +5921,19 @@ def run_mcp_server() -> None:
                                     "properties": {
                                         "out": {"type": "string", "description": "File path to save THREAT_MODEL.md to"},
                                         "fix": {"type": "boolean", "description": "Automatically inject missing security & audit boundaries to Canvas", "default": False},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_refactor",
+                                "description": "Architecture migration and refactoring assistant: analyzes frame coupling, proposes decomposition, and generates MIGRATION_PLAN.md.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "frame": {"type": "string", "description": "Target monolithic frame title or ID to decompose"},
+                                        "split": {"type": "boolean", "description": "Apply live decomposition mutation directly to Canvas", "default": False},
+                                        "out": {"type": "string", "description": "File path to save MIGRATION_PLAN.md to"},
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     }
                                 }
@@ -6438,6 +6732,27 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_refactor":
+                    canvas = api_get(ep, "/api/canvas")
+                    target_frame = args.get("frame")
+                    apply_split = args.get("split", False)
+                    out_path = args.get("out")
+                    res = run_architecture_refactor(canvas, target_frame=target_frame, apply_split=apply_split, ep=ep)
+                    if out_path:
+                        md = generate_migration_plan_md(res)
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(md)
+                        rendered = f"Zero-Downtime Migration Plan generated and saved to {os.path.abspath(out_path)} ({len(md)} bytes)."
+                    else:
+                        rendered = format_refactor_report(res, use_ansi=False)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -6842,6 +7157,13 @@ def main() -> None:
     p_threats.add_argument("--fix", action="store_true", help="Automatically inject missing security & audit boundaries to Canvas")
     p_threats.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # refactor
+    p_refactor = subparsers.add_parser("refactor", help="Architecture migration and refactoring assistant for monolithic frames")
+    p_refactor.add_argument("--frame", help="Target monolithic frame title or ID to analyze and decompose")
+    p_refactor.add_argument("--split", action="store_true", help="Apply live decomposition mutation directly to Canvas")
+    p_refactor.add_argument("--out", help="File path to export full MIGRATION_PLAN.md specification")
+    p_refactor.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -6924,6 +7246,8 @@ def main() -> None:
         cmd_benchmark(args)
     elif args.subcommand == "audit-threats":
         cmd_audit_threats(args)
+    elif args.subcommand == "refactor":
+        cmd_refactor(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
