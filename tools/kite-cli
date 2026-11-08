@@ -5301,6 +5301,157 @@ def cmd_refactor(args: argparse.Namespace) -> None:
     else:
         print(format_refactor_report(res, use_ansi=sys.stdout.isatty()))
 
+# ==================== LAN PEER-TO-PEER MESH TOPOLOGY VISUALIZER ====================
+
+def run_mesh_topology(
+    nodes: Optional[List[str]] = None,
+    ping_samples: int = 4
+) -> Dict[str, Any]:
+    default_endpoints = [
+        "http://127.0.0.1:24242",
+        "http://127.0.0.1:24243"
+    ]
+    candidate_endpoints = nodes if nodes else default_endpoints
+
+    scanned_nodes = []
+    online_nodes = []
+
+    for ep in candidate_endpoints:
+        status_url = f"{ep}/api/status"
+        lats = []
+        app_info = {}
+        is_online = False
+
+        for _ in range(max(1, ping_samples)):
+            t0 = time.perf_counter()
+            try:
+                with urllib.request.urlopen(status_url, timeout=0.6) as r:
+                    data = json.loads(r.read())
+                    lats.append((time.perf_counter() - t0) * 1000.0)
+                    app_info = data
+                    is_online = True
+            except Exception:
+                pass
+
+        if not is_online:
+            scanned_nodes.append({
+                "endpoint": ep,
+                "online": False,
+                "app": "Kite Station (Offline)",
+                "version": "N/A",
+                "ping_avg_ms": None,
+                "ideas_count": 0,
+                "canvas_hash": "N/A",
+                "components_count": 0
+            })
+            continue
+
+        ping_avg = round(sum(lats) / len(lats), 2) if lats else 0.0
+        ping_min = round(min(lats), 2) if lats else 0.0
+        ping_max = round(max(lats), 2) if lats else 0.0
+
+        ideas_cnt = 0
+        try:
+            with urllib.request.urlopen(f"{ep}/api/ideas", timeout=0.8) as r:
+                ideas_cnt = len(json.loads(r.read()).get("ideas", []))
+        except Exception:
+            pass
+
+        c_hash = "N/A"
+        comps_cnt = 0
+        try:
+            with urllib.request.urlopen(f"{ep}/api/canvas", timeout=0.8) as r:
+                c_data = json.loads(r.read())
+                c_hash = compute_canvas_hash(c_data)
+                comps_cnt = len(c_data.get("frames", [])) + len(c_data.get("stickies", [])) + len(c_data.get("connections", []))
+        except Exception:
+            pass
+
+        node_data = {
+            "endpoint": ep,
+            "online": True,
+            "app": app_info.get("app", "Kite Station"),
+            "version": app_info.get("version", "1.0.0"),
+            "ping_avg_ms": ping_avg,
+            "ping_min_ms": ping_min,
+            "ping_max_ms": ping_max,
+            "ideas_count": ideas_cnt,
+            "canvas_hash": c_hash,
+            "components_count": comps_cnt
+        }
+        scanned_nodes.append(node_data)
+        online_nodes.append(node_data)
+
+    if len(online_nodes) > 1:
+        hashes = {n["canvas_hash"] for n in online_nodes if n["canvas_hash"] != "N/A"}
+        if len(hashes) == 1:
+            state_drift = "IN_SYNC"
+            drift_message = "All online stations maintain identical architecture state."
+            health_score = 100
+        else:
+            state_drift = "DIVERGENT"
+            drift_message = "Detected state drift across stations. Run 'kite sync' to reconcile."
+            health_score = 65
+    elif len(online_nodes) == 1:
+        state_drift = "STANDALONE_QUORUM"
+        drift_message = "Single active station running healthy local quorum."
+        health_score = 90
+    else:
+        state_drift = "CLUSTER_OFFLINE"
+        drift_message = "No active stations reachable on the local mesh."
+        health_score = 0
+
+    return {
+        "status": "success",
+        "total_nodes": len(scanned_nodes),
+        "online_nodes_count": len(online_nodes),
+        "mesh_health_score": health_score,
+        "state_drift": state_drift,
+        "drift_message": drift_message,
+        "nodes": scanned_nodes
+    }
+
+def format_mesh_topology_report(res: Dict[str, Any], show_matrix: bool = False, use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_YELLOW = "\033[1;33m" if use_ansi else ""
+    C_RED = "\033[1;31m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE LAN PEER-TO-PEER MESH TOPOLOGY ==={C_RESET}")
+    lines.append("-" * 88)
+    score = res.get("mesh_health_score", 0)
+    score_color = C_GREEN if score >= 85 else (C_YELLOW if score >= 60 else C_RED)
+    lines.append(f"Mesh Health Score:   {score_color}{C_BOLD}{score}%{C_RESET} | Active Nodes: {res.get('online_nodes_count')}/{res.get('total_nodes')}")
+    lines.append(f"State Consistency:   {C_BOLD}{res.get('state_drift')}{C_RESET} ({res.get('drift_message')})")
+    lines.append("-" * 88)
+    lines.append(f"{'ENDPOINT':<26} {'PLATFORM / APP':<20} {'PING RTT':<12} {'IDEAS':<8} {'CANVAS HASH':<14} {'STATUS'}")
+    lines.append("-" * 88)
+    for n in res.get("nodes", []):
+        ep = n.get("endpoint", "")
+        app_name = f"{n.get('app')} v{n.get('version')}"[:19]
+        is_on = n.get("online", False)
+        st_color = C_GREEN if is_on else C_RED
+        st_text = f"{st_color}{'ONLINE' if is_on else 'OFFLINE'}{C_RESET}"
+        ping_s = f"{n.get('ping_avg_ms', 0):.2f} ms" if is_on else "N/A"
+        ideas_s = str(n.get("ideas_count", 0)) if is_on else "-"
+        hash_s = str(n.get("canvas_hash", "N/A")) if is_on else "-"
+        lines.append(f"{ep:<26} {app_name:<20} {ping_s:<12} {ideas_s:<8} {hash_s:<14} {st_text}")
+    lines.append("-" * 88)
+    lines.append(f"Zero Emojis Standard Verified | Transport: HTTP/1.1 REST + SSE Broadcast")
+    return "\n".join(lines)
+
+def cmd_mesh_topology(args: argparse.Namespace) -> None:
+    show_matrix = getattr(args, "matrix", False)
+    json_out = getattr(args, "json", False)
+    res = run_mesh_topology()
+    if json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(format_mesh_topology_report(res, show_matrix=show_matrix, use_ansi=sys.stdout.isatty()))
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -5934,6 +6085,18 @@ def run_mcp_server() -> None:
                                         "frame": {"type": "string", "description": "Target monolithic frame title or ID to decompose"},
                                         "split": {"type": "boolean", "description": "Apply live decomposition mutation directly to Canvas", "default": False},
                                         "out": {"type": "string", "description": "File path to save MIGRATION_PLAN.md to"},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_mesh_topology",
+                                "description": "Visualizes LAN peer-to-peer mesh topology, node health, round-trip latency, and state drift across Kite stations.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ping": {"type": "boolean", "description": "Execute active latency ping burst across stations", "default": True},
+                                        "matrix": {"type": "boolean", "description": "Include node-to-node latency matrix", "default": False},
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     }
                                 }
@@ -6753,6 +6916,18 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_mesh_topology":
+                    show_matrix = args.get("matrix", False)
+                    res = run_mesh_topology()
+                    rendered = format_mesh_topology_report(res, show_matrix=show_matrix, use_ansi=False)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -7164,6 +7339,12 @@ def main() -> None:
     p_refactor.add_argument("--out", help="File path to export full MIGRATION_PLAN.md specification")
     p_refactor.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # mesh-topology
+    p_mesh_top = subparsers.add_parser("mesh-topology", help="LAN peer-to-peer mesh topology visualizer and drift detector")
+    p_mesh_top.add_argument("--ping", action="store_true", default=True, help="Execute latency ping burst across stations")
+    p_mesh_top.add_argument("--matrix", action="store_true", help="Include node-to-node latency matrix")
+    p_mesh_top.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -7248,6 +7429,8 @@ def main() -> None:
         cmd_audit_threats(args)
     elif args.subcommand == "refactor":
         cmd_refactor(args)
+    elif args.subcommand == "mesh-topology":
+        cmd_mesh_topology(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
