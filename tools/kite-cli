@@ -15,6 +15,7 @@ import urllib.request
 import urllib.error
 import argparse
 import shutil
+import re
 from typing import Any, Dict, List, Optional
 
 MAC_ENDPOINT = "http://127.0.0.1:24242"
@@ -145,6 +146,220 @@ def cmd_show(args: argparse.Namespace) -> None:
     print("\nConcept:")
     print(item.get("description") or "(none)")
 
+def generate_canvas_mermaid(canvas: Dict[str, Any]) -> str:
+    def sanitize_id(s: Any) -> str:
+        res = re.sub(r"[^a-zA-Z0-9_]", "_", str(s))
+        if res and res[0].isdigit():
+            res = "n_" + res
+        return res or "node"
+
+    def clean_label(text: str) -> str:
+        text = text.replace('"', "'").strip()
+        return text[:70] + ("..." if len(text) > 70 else "")
+
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+    connections = canvas.get("connections", [])
+
+    lines = ["flowchart TD"]
+    known_nodes = set()
+    frame_map: Dict[str, List[Dict[str, Any]]] = {}
+    unframed: List[Dict[str, Any]] = []
+
+    for s in stickies:
+        pos = s.get("position", [0, 0])
+        px, py = pos[0], pos[1]
+        assigned = None
+        for f in frames:
+            fx, fy = f.get("x", 0), f.get("y", 0)
+            fw, fh = f.get("width", 300), f.get("height", 300)
+            if fx <= px <= fx + fw and fy <= py <= fy + fh:
+                assigned = f.get("id")
+                break
+        if assigned:
+            frame_map.setdefault(assigned, []).append(s)
+        else:
+            unframed.append(s)
+
+    for f in frames:
+        fid = sanitize_id(f.get("id"))
+        ftitle = clean_label(f.get("title", "Frame"))
+        lines.append(f'  subgraph {fid} ["{ftitle}"]')
+        f_stickies = frame_map.get(f.get("id"), [])
+        if not f_stickies:
+            empty_id = f"{fid}_empty"
+            lines.append(f'    {empty_id}["Empty Container"]')
+            known_nodes.add(empty_id)
+        for s in f_stickies:
+            sid = sanitize_id(s.get("id"))
+            stext = clean_label(s.get("text", "Node"))
+            lines.append(f'    {sid}["{stext}"]')
+            known_nodes.add(sid)
+        lines.append("  end")
+
+    if unframed:
+        lines.append('  subgraph unframed ["General Directives"]')
+        for s in unframed:
+            sid = sanitize_id(s.get("id"))
+            stext = clean_label(s.get("text", "Node"))
+            lines.append(f'    {sid}["{stext}"]')
+            known_nodes.add(sid)
+        lines.append("  end")
+
+    for c in connections:
+        f_id = sanitize_id(c.get("fromId", ""))
+        t_id = sanitize_id(c.get("toId", ""))
+        lbl = clean_label(c.get("label", "")).replace("|", "/")
+        if f_id not in known_nodes:
+            lines.append(f'  {f_id}["{f_id}"]')
+            known_nodes.add(f_id)
+        if t_id not in known_nodes:
+            lines.append(f'  {t_id}["{t_id}"]')
+            known_nodes.add(t_id)
+        arrow = f'-->|"{lbl}"|' if lbl else "-->"
+        lines.append(f"  {f_id} {arrow} {t_id}")
+
+    return "\n".join(lines)
+
+def generate_canvas_plantuml(canvas: Dict[str, Any]) -> str:
+    def sanitize_id(s: Any) -> str:
+        res = re.sub(r"[^a-zA-Z0-9_]", "_", str(s))
+        if res and res[0].isdigit():
+            res = "n_" + res
+        return res or "node"
+
+    def clean_label(text: str) -> str:
+        text = text.replace('"', "'").strip()
+        return text[:70] + ("..." if len(text) > 70 else "")
+
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+    connections = canvas.get("connections", [])
+
+    lines = [
+        "@startuml",
+        "skinparam monochrome true",
+        "skinparam shadowing false",
+        "skinparam roundcorner 8",
+        "skinparam packageStyle rectangle"
+    ]
+    frame_map: Dict[str, List[Dict[str, Any]]] = {}
+    unframed: List[Dict[str, Any]] = []
+
+    for s in stickies:
+        pos = s.get("position", [0, 0])
+        px, py = pos[0], pos[1]
+        assigned = None
+        for f in frames:
+            fx, fy = f.get("x", 0), f.get("y", 0)
+            fw, fh = f.get("width", 300), f.get("height", 300)
+            if fx <= px <= fx + fw and fy <= py <= fy + fh:
+                assigned = f.get("id")
+                break
+        if assigned:
+            frame_map.setdefault(assigned, []).append(s)
+        else:
+            unframed.append(s)
+
+    for f in frames:
+        fid = sanitize_id(f.get("id"))
+        ftitle = clean_label(f.get("title", "Frame"))
+        lines.append(f'package "{ftitle}" as {fid} {{')
+        for s in frame_map.get(f.get("id"), []):
+            sid = sanitize_id(s.get("id"))
+            stext = clean_label(s.get("text", "Node"))
+            lines.append(f"  component [{stext}] as {sid}")
+        lines.append("}")
+
+    if unframed:
+        lines.append('package "General Directives" as unframed {')
+        for s in unframed:
+            sid = sanitize_id(s.get("id"))
+            stext = clean_label(s.get("text", "Node"))
+            lines.append(f"  component [{stext}] as {sid}")
+        lines.append("}")
+
+    for c in connections:
+        f_id = sanitize_id(c.get("fromId", ""))
+        t_id = sanitize_id(c.get("toId", ""))
+        lbl = clean_label(c.get("label", ""))
+        if lbl:
+            lines.append(f"{f_id} --> {t_id} : {lbl}")
+        else:
+            lines.append(f"{f_id} --> {t_id}")
+
+    lines.append("@enduml")
+    return "\n".join(lines)
+
+def generate_canvas_openapi(canvas: Dict[str, Any]) -> str:
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+
+    def slugify(text: str) -> str:
+        clean = re.sub(r"\[.*?\]", "", text)
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", clean.strip().lower()).strip("-")
+        return slug or "endpoint"
+
+    def clean_str(text: str) -> str:
+        clean = text.replace('"', "").strip()
+        return f'"{clean}"'
+
+    tags = []
+    paths = []
+
+    for f in frames:
+        ftitle = f.get("title", "Module")
+        tname = re.sub(r"\[.*?\]", "", ftitle).strip()
+        tags.append(f"  - name: {clean_str(tname)}\n    description: {clean_str(ftitle)}")
+
+    for s in stickies:
+        text = s.get("text", "Service Endpoint")
+        slug = slugify(text)
+        op_id = re.sub(r"[^a-zA-Z0-9]", "", slug.title())
+        paths.append(
+            f"  /api/v1/{slug}:\n"
+            f"    get:\n"
+            f"      summary: {clean_str(text)}\n"
+            f"      operationId: get{op_id}\n"
+            f"      responses:\n"
+            f"        '200':\n"
+            f"          description: Successful response\n"
+            f"          content:\n"
+            f"            application/json:\n"
+            f"              schema:\n"
+            f"                $ref: '#/components/schemas/StandardResponse'\n"
+            f"        '500':\n"
+            f"          description: Internal station error"
+        )
+
+    lines = [
+        "openapi: 3.1.0",
+        "info:",
+        "  title: Kite Topology API",
+        "  version: 1.3.0",
+        "  description: Automatically synthesized OpenAPI 3.1 contract from Kite Architecture Canvas.",
+        "servers:",
+        "  - url: http://127.0.0.1:24242",
+        "    description: macOS Kite Local Station",
+        "  - url: http://127.0.0.1:24243",
+        "    description: Windows 11 KiteWin Local Station",
+        "tags:",
+        *(tags if tags else ["  - name: Default\n    description: Primary API"]),
+        "paths:",
+        *(paths if paths else ["  /api/v1/health:\n    get:\n      summary: Health probe\n      responses:\n        '200':\n          description: Healthy"]),
+        "components:",
+        "  schemas:",
+        "    StandardResponse:",
+        "      type: object",
+        "      properties:",
+        "        status:",
+        "          type: string",
+        "          example: ok",
+        "        data:",
+        "          type: object"
+    ]
+    return "\n".join(lines)
+
 def cmd_canvas_export(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     data = api_get(ep, "/api/canvas")
@@ -163,6 +378,12 @@ def cmd_canvas_export(args: argparse.Namespace) -> None:
         print("\n### Stickies & Architectural Directives:")
         for s in data.get("stickies", []):
             print(f"- {s.get('text')}")
+    elif args.format == "mermaid":
+        print(generate_canvas_mermaid(data))
+    elif args.format == "plantuml":
+        print(generate_canvas_plantuml(data))
+    elif args.format == "openapi":
+        print(generate_canvas_openapi(data))
     else:
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
@@ -590,7 +811,7 @@ def run_mcp_server() -> None:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
-                                        "format": {"type": "string", "enum": ["stitch", "json"], "default": "stitch"}
+                                        "format": {"type": "string", "enum": ["stitch", "json", "mermaid", "plantuml", "openapi"], "default": "stitch"}
                                     }
                                 }
                             },
@@ -763,6 +984,12 @@ def run_mcp_server() -> None:
                         for s in canvas.get("stickies", []):
                             lines.append(f"- {s.get('text')}")
                         text = "\n".join(lines)
+                    elif fmt == "mermaid":
+                        text = generate_canvas_mermaid(canvas)
+                    elif fmt == "plantuml":
+                        text = generate_canvas_plantuml(canvas)
+                    elif fmt == "openapi":
+                        text = generate_canvas_openapi(canvas)
                     else:
                         text = json.dumps(canvas, indent=2, ensure_ascii=False)
 
@@ -1186,8 +1413,8 @@ def main() -> None:
     p_show.add_argument("query", help="ID or title substring to find")
 
     # canvas
-    p_canvas = subparsers.add_parser("canvas", help="Export canvas layout and tokens")
-    p_canvas.add_argument("--format", choices=["stitch", "json"], default="stitch", help="Output format")
+    p_canvas = subparsers.add_parser("canvas", help="Export canvas layout, diagrams, and API contracts")
+    p_canvas.add_argument("--format", choices=["stitch", "json", "mermaid", "plantuml", "openapi"], default="stitch", help="Output format (stitch, json, mermaid, plantuml, openapi)")
 
     # scaffold
     p_scaffold = subparsers.add_parser("scaffold", help="Scaffold project constitution and planning directory")
