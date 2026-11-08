@@ -1216,6 +1216,129 @@ def cmd_import_repo(args: argparse.Namespace) -> None:
     print(f"  + Connections: {len(connections)}")
     print(f"Live status: {res.get('status', 'ok')}")
 
+def analyze_architecture_drift(folder: str, canvas: Dict[str, Any]) -> Dict[str, Any]:
+    arch_modules = []
+    for root, dirs, files in os.walk(folder):
+        if any(s in root for s in [".git", ".build", "node_modules", "dist", "tools", "Tests"]):
+            continue
+        for f in files:
+            if f.endswith((".swift", ".cs", ".ts", ".tsx")) and not f.startswith("."):
+                base = os.path.splitext(f)[0]
+                if base in ("Package",):
+                    continue
+                low = base.lower()
+                layer = "Service"
+                if any(k in low for k in ["view", "page", "popover", "toolbar", "sheet", "dialog", "hud"]):
+                    layer = "UI"
+                elif any(k in low for k in ["store", "model", "data", "schema", "entity", "item"]):
+                    layer = "Data"
+                arch_modules.append({"name": base, "layer": layer})
+
+    canvas_nodes = []
+    for f in canvas.get("frames", []):
+        canvas_nodes.append({"type": "frame", "id": f.get("id"), "text": f.get("title", "")})
+    for s in canvas.get("stickies", []):
+        canvas_nodes.append({"type": "sticky", "id": s.get("id"), "text": s.get("text", "")})
+
+    def extract_keywords(s: str) -> set:
+        words = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|\d+", s)
+        return set(w.lower() for w in words if len(w) > 2)
+
+    charted = []
+    uncharted = []
+
+    for mod in arch_modules:
+        mod_kw = extract_keywords(mod["name"])
+        matched_cn = None
+        for cn in canvas_nodes:
+            cn_kw = extract_keywords(cn["text"])
+            if mod_kw & cn_kw:
+                matched_cn = cn
+                break
+        if matched_cn:
+            charted.append({"module": mod, "canvas": matched_cn})
+        else:
+            uncharted.append(mod)
+
+    unimplemented = []
+    for cn in canvas_nodes:
+        cn_kw = extract_keywords(cn["text"])
+        matched_mod = False
+        for mod in arch_modules:
+            mod_kw = extract_keywords(mod["name"])
+            if cn_kw & mod_kw:
+                matched_mod = True
+                break
+        if not matched_mod:
+            unimplemented.append(cn)
+
+    total = len(arch_modules)
+    health = int((len(charted) / total * 100)) if total > 0 else 100
+    drift = 100 - health
+
+    return {
+        "folder": folder,
+        "total_modules": total,
+        "charted": charted,
+        "uncharted": uncharted,
+        "unimplemented": unimplemented,
+        "health_score": health,
+        "drift_score": drift
+    }
+
+def cmd_diff_canvas(args: argparse.Namespace) -> None:
+    folder = os.path.abspath(getattr(args, "path", ".") or ".")
+    ep = get_active_endpoint()
+    canvas = api_get(ep, "/api/canvas")
+
+    diff = analyze_architecture_drift(folder, canvas)
+
+    print("=== Kite Architecture Drift Detector ===")
+    print(f"Codebase:       {folder}")
+    print(f"Station:        {ep}")
+    print(f"Arch Health:    {diff['health_score']}% (Drift: {diff['drift_score']}%)")
+    print(f"Total Modules:  {diff['total_modules']}")
+    print(f"Charted:        {len(diff['charted'])}")
+    print(f"Uncharted:      {len(diff['uncharted'])}")
+    print(f"Unimplemented:  {len(diff['unimplemented'])}\n")
+
+    print("[+] Charted Modules (In Sync with Canvas):")
+    for item in diff["charted"][:6]:
+        mod = item["module"]
+        print(f"  - [{mod['layer']}] {mod['name']} <-> \"{item['canvas']['text']}\"")
+    if len(diff["charted"]) > 6:
+        print(f"  ... and {len(diff['charted']) - 6} more charted modules")
+
+    print("\n[-] Uncharted Code Modules (Missing from Canvas):")
+    for mod in diff["uncharted"][:6]:
+        print(f"  - [{mod['layer']}] {mod['name']}")
+    if len(diff["uncharted"]) > 6:
+        print(f"  ... and {len(diff['uncharted']) - 6} more uncharted modules")
+
+    print("\n[?] Unimplemented Canvas Directives (No matching code files):")
+    for node in diff["unimplemented"][:6]:
+        print(f"  - [{node['type'].upper()}] \"{node['text']}\"")
+    if len(diff["unimplemented"]) > 6:
+        print(f"  ... and {len(diff['unimplemented']) - 6} more directives")
+
+    if getattr(args, "apply", False) and diff["uncharted"]:
+        print("\nApplying architecture sync to Canvas...")
+        stickies = canvas.get("stickies", [])
+        new_count = 0
+        layer_colors = {"UI": "#DBEAFE", "Service": "#D1FAE5", "Data": "#EDE9FE"}
+        for idx, mod in enumerate(diff["uncharted"][:6]):
+            sid = f"drift-sync-{int(time.time())}-{idx}"
+            stickies.append({
+                "id": sid,
+                "text": f"[{mod['layer']}] {mod['name']}",
+                "colorHex": layer_colors.get(mod["layer"], "#FEF3C7"),
+                "position": [100.0, 560.0 + idx * 100.0]
+            })
+            new_count += 1
+        canvas["stickies"] = stickies
+        res = api_post(ep, "/api/canvas", canvas)
+        print(f"[+] Successfully charted {new_count} missing code modules onto live Canvas ({res.get('status', 'ok')}).")
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -1579,6 +1702,17 @@ def run_mcp_server() -> None:
                                         "outputDir": {"type": "string", "description": "Directory to write files to"}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_diff_canvas",
+                                "description": "Analyzes architectural drift between repository source code and the live Kite Canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {"type": "string", "description": "Repository path to inspect (defaults to current dir)"},
+                                        "apply": {"type": "boolean", "description": "Automatically sync uncharted modules to Canvas", "default": False}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -1885,6 +2019,45 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_diff_canvas":
+                    path = args.get("path", ".")
+                    apply_sync = args.get("apply", False)
+                    canvas = api_get(ep, "/api/canvas")
+                    diff = analyze_architecture_drift(os.path.abspath(path), canvas)
+                    summary = (
+                        f"Architecture Drift Report for {diff['folder']}:\n"
+                        f"- Health Score: {diff['health_score']}%\n"
+                        f"- Drift Score: {diff['drift_score']}%\n"
+                        f"- Total Modules: {diff['total_modules']}\n"
+                        f"- Charted: {len(diff['charted'])}\n"
+                        f"- Uncharted: {len(diff['uncharted'])}\n"
+                        f"- Unimplemented: {len(diff['unimplemented'])}\n"
+                    )
+                    if apply_sync and diff["uncharted"]:
+                        stickies = canvas.get("stickies", [])
+                        new_count = 0
+                        layer_colors = {"UI": "#DBEAFE", "Service": "#D1FAE5", "Data": "#EDE9FE"}
+                        for idx, mod in enumerate(diff["uncharted"][:6]):
+                            sid = f"drift-sync-{int(time.time())}-{idx}"
+                            stickies.append({
+                                "id": sid,
+                                "text": f"[{mod['layer']}] {mod['name']}",
+                                "colorHex": layer_colors.get(mod["layer"], "#FEF3C7"),
+                                "position": [100.0, 560.0 + idx * 100.0]
+                            })
+                            new_count += 1
+                        canvas["stickies"] = stickies
+                        res = api_post(ep, "/api/canvas", canvas)
+                        summary += f"\nApplied {new_count} uncharted modules to Canvas ({res.get('status', 'ok')})."
+
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": summary}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -2169,6 +2342,11 @@ def main() -> None:
     p_syn.add_argument("--out", default="artifacts", help="Destination directory (default: ./artifacts)")
     p_syn.add_argument("--dry-run", action="store_true", help="Preview generated files without writing to disk")
 
+    # diff-canvas
+    p_diff = subparsers.add_parser("diff-canvas", help="Detect architecture drift between codebase and live canvas")
+    p_diff.add_argument("path", nargs="?", default=".", help="Repository path to analyze (default: .)")
+    p_diff.add_argument("--apply", action="store_true", help="Sync uncharted modules directly to Canvas")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -2213,6 +2391,8 @@ def main() -> None:
         cmd_voice_session(args)
     elif args.subcommand == "synthesize":
         cmd_synthesize(args)
+    elif args.subcommand == "diff-canvas":
+        cmd_diff_canvas(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
