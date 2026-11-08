@@ -14,6 +14,7 @@ import json
 import urllib.request
 import urllib.error
 import argparse
+import shutil
 from typing import Any, Dict, List, Optional
 
 MAC_ENDPOINT = "http://127.0.0.1:24242"
@@ -976,6 +977,181 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
         except Exception as ex:
             sys.stderr.write(f"MCP Server error: {ex}\n")
 
+# ==================== MCP SETUP & CLIENT INTEGRATIONS ====================
+
+def get_mcp_client_targets() -> List[Dict[str, Any]]:
+    home = os.path.expanduser("~")
+    is_win = sys.platform == "win32"
+    appdata = os.environ.get("APPDATA", os.path.join(home, "AppData", "Roaming"))
+    return [
+        {
+            "id": "claude",
+            "name": "Claude Desktop",
+            "path": os.path.join(appdata, "Claude", "claude_desktop_config.json") if is_win else os.path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+            "app_dir": os.path.join(appdata, "Claude") if is_win else os.path.join(home, "Library", "Application Support", "Claude"),
+            "key": "mcpServers"
+        },
+        {
+            "id": "cursor",
+            "name": "Cursor IDE",
+            "path": os.path.join(home, ".cursor", "mcp.json"),
+            "app_dir": os.path.join(home, ".cursor"),
+            "key": "mcpServers"
+        },
+        {
+            "id": "windsurf",
+            "name": "Windsurf (Codeium)",
+            "path": os.path.join(home, ".codeium", "windsurf", "mcp_config.json"),
+            "app_dir": os.path.join(home, ".codeium", "windsurf"),
+            "key": "mcpServers"
+        },
+        {
+            "id": "cline",
+            "name": "Cline / Roo Code",
+            "path": os.path.join(appdata, "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json") if is_win else os.path.join(home, "Library", "Application Support", "Code", "User", "globalStorage", "saoudrizwan.claude-dev", "settings", "cline_mcp_settings.json"),
+            "app_dir": os.path.join(appdata, "Code") if is_win else os.path.join(home, "Library", "Application Support", "Code"),
+            "key": "mcpServers"
+        }
+    ]
+
+def resolve_kite_command() -> str:
+    which_kite = shutil.which("kite")
+    if which_kite:
+        return which_kite
+    if sys.platform != "win32" and os.path.exists("/usr/local/bin/kite"):
+        return "/usr/local/bin/kite"
+    return os.path.abspath(sys.argv[0])
+
+def cmd_mcp_setup(action: str = "install", dry_run: bool = False) -> None:
+    targets = get_mcp_client_targets()
+    kite_cmd = resolve_kite_command()
+    mcp_entry = {
+        "command": kite_cmd,
+        "args": ["mcp"]
+    }
+
+    print("=== Kite MCP Integration Manager ===")
+    print(f"Action:     {action.upper()}")
+    print(f"Kite CLI:   {kite_cmd}")
+    if dry_run:
+        print("Mode:       DRY RUN (preview only, no files modified)\n")
+    else:
+        print()
+
+    if action == "status":
+        for t in targets:
+            name = t["name"]
+            path = t["path"]
+            app_dir = t["app_dir"]
+            if not os.path.exists(path):
+                if os.path.exists(app_dir):
+                    status_str = "NOT CONFIGURED (App directory detected)"
+                else:
+                    status_str = "NOT INSTALLED (Client not detected)"
+                print(f"  [-] {name:<18} : {status_str}")
+                print(f"      Path: {path}")
+            else:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    servers = cfg.get(t["key"], {})
+                    if "kite" in servers:
+                        kcfg = servers["kite"]
+                        cmd = kcfg.get("command", "")
+                        args = " ".join(kcfg.get("args", []))
+                        print(f"  [+] {name:<18} : CONFIGURED ({cmd} {args})")
+                        print(f"      Path: {path}")
+                    else:
+                        print(f"  [~] {name:<18} : OTHER MCP SERVERS PRESENT (Kite not added)")
+                        print(f"      Path: {path}")
+                except Exception as ex:
+                    print(f"  [!] {name:<18} : ERROR READING CONFIG ({ex})")
+        return
+
+    if action == "install":
+        installed_count = 0
+        for t in targets:
+            name = t["name"]
+            path = t["path"]
+            app_dir = t["app_dir"]
+
+            if not os.path.exists(path) and not os.path.exists(app_dir):
+                if t["id"] != "cursor":
+                    continue
+
+            print(f"Configuring {name}...")
+            print(f"  Target: {path}")
+
+            cfg: Dict[str, Any] = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception as ex:
+                    print(f"  [!] Warning: could not parse existing JSON ({ex}). Creating backup.")
+                    if not dry_run:
+                        shutil.copy2(path, path + ".broken.bak")
+                    cfg = {}
+
+            if t["key"] not in cfg or not isinstance(cfg[t["key"]], dict):
+                cfg[t["key"]] = {}
+
+            existing = cfg[t["key"]].get("kite")
+            if existing == mcp_entry:
+                print(f"  [=] Kite MCP is already configured with identical parameters.")
+                installed_count += 1
+                continue
+
+            cfg[t["key"]]["kite"] = mcp_entry
+
+            if dry_run:
+                print(f"  [DRY-RUN] Target JSON preview:")
+                print("  " + json.dumps({t["key"]: {"kite": mcp_entry}}, indent=2).replace("\n", "\n  "))
+            else:
+                if os.path.exists(path):
+                    shutil.copy2(path, path + ".bak")
+                else:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                    f.write("\n")
+                print(f"  [+] Successfully registered Kite MCP server in {name}.")
+            installed_count += 1
+
+        print(f"\nSummary: {installed_count} client target(s) processed.")
+        return
+
+    if action == "uninstall":
+        removed_count = 0
+        for t in targets:
+            name = t["name"]
+            path = t["path"]
+            if not os.path.exists(path):
+                continue
+
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                continue
+
+            servers = cfg.get(t["key"], {})
+            if "kite" in servers:
+                print(f"Removing Kite MCP from {name} ({path})...")
+                del cfg[t["key"]]["kite"]
+                if dry_run:
+                    print("  [DRY-RUN] Key 'kite' would be removed.")
+                else:
+                    shutil.copy2(path, path + ".bak")
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(cfg, f, indent=2, ensure_ascii=False)
+                        f.write("\n")
+                    print(f"  [-] Successfully uninstalled Kite MCP from {name}.")
+                removed_count += 1
+
+        print(f"\nSummary: {removed_count} client target(s) updated.")
+        return
+
 # ==================== MAIN DISPATCHER ====================
 
 def main() -> None:
@@ -1050,7 +1226,16 @@ def main() -> None:
     p_voice.add_argument("transcript", help="Transcript or user voice directive")
 
     # mcp
-    subparsers.add_parser("mcp", help="Run MCP server over stdio for Claude Desktop / Cursor / Antigravity")
+    p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
+    p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
+    p_mcp.add_argument("--dry-run", action="store_true", help="Preview configuration changes without writing files")
+
+    # mcp-setup alias
+    p_setup = subparsers.add_parser("mcp-setup", help="Configure Claude Desktop, Cursor, and VS Code for Kite MCP")
+    p_setup.add_argument("action", nargs="?", choices=["install", "setup", "status", "uninstall"], default="install", help="Action: install (default), status, or uninstall")
+    p_setup.add_argument("--status", action="store_true", help="Show status of MCP client configurations")
+    p_setup.add_argument("--uninstall", action="store_true", help="Remove Kite from MCP client configurations")
+    p_setup.add_argument("--dry-run", action="store_true", help="Preview configuration changes without writing files")
 
     args = parser.parse_args()
 
@@ -1081,7 +1266,22 @@ def main() -> None:
     elif args.subcommand == "voice-session":
         cmd_voice_session(args)
     elif args.subcommand == "mcp":
-        run_mcp_server()
+        action = getattr(args, "action", "run")
+        if action == "run":
+            run_mcp_server()
+        elif action in ("setup", "install"):
+            cmd_mcp_setup(action="install", dry_run=getattr(args, "dry_run", False))
+        elif action == "uninstall":
+            cmd_mcp_setup(action="uninstall", dry_run=getattr(args, "dry_run", False))
+        elif action == "status":
+            cmd_mcp_setup(action="status", dry_run=False)
+    elif args.subcommand == "mcp-setup":
+        action = "install"
+        if getattr(args, "status", False) or getattr(args, "action", None) == "status":
+            action = "status"
+        elif getattr(args, "uninstall", False) or getattr(args, "action", None) == "uninstall":
+            action = "uninstall"
+        cmd_mcp_setup(action=action, dry_run=getattr(args, "dry_run", False))
     else:
         parser.print_help()
 
