@@ -2659,6 +2659,139 @@ def cmd_dist_check(args: argparse.Namespace) -> None:
     if res.get("status") != "passed":
         sys.exit(1)
 
+def run_build_dist(version: str = "1.3.0", update_cask: bool = True) -> Dict[str, Any]:
+    mac_root = "/Users/tasonai/Developer/Kite"
+    dmg_script = os.path.join(mac_root, "tools", "make_dmg.sh")
+    cask_path = os.path.join(mac_root, "packaging", "homebrew", "kite.rb")
+    dist_dir = os.path.join(mac_root, "dist")
+
+    if not os.path.isfile(dmg_script):
+        return {"status": "error", "message": "tools/make_dmg.sh not found"}
+
+    proc = subprocess.run(["zsh", dmg_script, version], cwd=mac_root, capture_output=True, text=True)
+    if proc.returncode != 0:
+        err_msg = proc.stderr or proc.stdout
+        return {
+            "status": "failed",
+            "message": f"make_dmg.sh failed: {err_msg}",
+            "stdout": proc.stdout,
+            "stderr": proc.stderr
+        }
+
+    dmg_file = os.path.join(dist_dir, f"Kite-{version}-macOS.dmg")
+    zip_file = os.path.join(dist_dir, f"Kite-{version}-macOS.zip")
+    chk_file = os.path.join(dist_dir, "checksums.txt")
+
+    dmg_sha = ""
+    zip_sha = ""
+    if os.path.isfile(chk_file):
+        with open(chk_file, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) == 2:
+                    sha, fname = parts[0], parts[1]
+                    if fname.endswith(".dmg"):
+                        dmg_sha = sha
+                    elif fname.endswith(".zip"):
+                        zip_sha = sha
+
+    cask_updated = False
+    if update_cask and dmg_sha and os.path.isfile(cask_path):
+        try:
+            with open(cask_path, "r", encoding="utf-8") as f:
+                cask_content = f.read()
+            new_content = re.sub(r'sha256\s+"[a-f0-9]+"', f'sha256 "{dmg_sha}"', cask_content)
+            new_content = re.sub(r'version\s+"[^"]+"', f'version "{version}"', new_content)
+            with open(cask_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            cask_updated = True
+        except Exception:
+            cask_updated = False
+
+    mount_ok = False
+    if os.path.isfile(dmg_file):
+        chk = subprocess.run(["hdiutil", "attach", dmg_file, "-nobrowse"], capture_output=True, text=True)
+        if chk.returncode == 0:
+            vol_kite = "/Volumes/Kite"
+            if os.path.isdir(os.path.join(vol_kite, "Kite.app")):
+                mount_ok = True
+            subprocess.run(["hdiutil", "detach", vol_kite, "-force"], capture_output=True, text=True)
+
+    dmg_size = os.path.getsize(dmg_file) if os.path.isfile(dmg_file) else 0
+    zip_size = os.path.getsize(zip_file) if os.path.isfile(zip_file) else 0
+
+    return {
+        "status": "passed" if mount_ok and dmg_sha else "failed",
+        "version": version,
+        "dmg": {
+            "path": dmg_file,
+            "size": dmg_size,
+            "sha256": dmg_sha,
+            "mount_verified": mount_ok
+        },
+        "zip": {
+            "path": zip_file,
+            "size": zip_size,
+            "sha256": zip_sha
+        },
+        "cask_updated": cask_updated,
+        "cask_path": cask_path
+    }
+
+def format_build_dist_report(res: Dict[str, Any], use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_RED = "\033[1;31m" if use_ansi else ""
+    C_DIM = "\033[90m" if use_ansi else ""
+
+    lines = []
+    ver = res.get("version", "1.3.0")
+    lines.append(f"{C_CYAN}=== KITE RELEASE DISTRIBUTION ARTIFACTS BUILD (v{ver}) ==={C_RESET}")
+    lines.append("-" * 72)
+
+    dmg_info = res.get("dmg", {})
+    dmg_mb = round(dmg_info.get("size", 0) / (1024 * 1024), 2)
+    dmg_sha = dmg_info.get("sha256", "n/a")
+    mount_st = f"{C_GREEN}[VERIFIED MOUNT]{C_RESET}" if dmg_info.get("mount_verified") else f"{C_RED}[MOUNT FAILED]{C_RESET}"
+    lines.append(f"{mount_st} DMG Installer: Kite-{ver}-macOS.dmg ({dmg_mb} MB)")
+    lines.append(f"  {C_DIM}SHA256: {dmg_sha}{C_RESET}")
+
+    zip_info = res.get("zip", {})
+    zip_mb = round(zip_info.get("size", 0) / (1024 * 1024), 2)
+    zip_sha = zip_info.get("sha256", "n/a")
+    lines.append(f"{C_GREEN}[ARCHIVE]{C_RESET}       ZIP Package:   Kite-{ver}-macOS.zip ({zip_mb} MB)")
+    lines.append(f"  {C_DIM}SHA256: {zip_sha}{C_RESET}")
+
+    cask_st = f"{C_GREEN}[UPDATED]{C_RESET}" if res.get("cask_updated") else f"{C_DIM}[UNCHANGED]{C_RESET}"
+    cask_file = os.path.basename(res.get("cask_path", "kite.rb"))
+    lines.append(f"{cask_st}       Homebrew Cask: packaging/homebrew/{cask_file}")
+
+    lines.append("-" * 72)
+    if res.get("status") == "passed":
+        lines.append(f"{C_BOLD}{C_GREEN}RELEASE PACKAGE READY FOR DISTRIBUTION & PUBLISHING{C_RESET}")
+    else:
+        lines.append(f"{C_BOLD}{C_RED}DISTRIBUTION PACKAGING FAILED{C_RESET}")
+
+    return "\n".join(lines)
+
+def cmd_build_dist(args: argparse.Namespace) -> None:
+    ver = getattr(args, "version", "1.3.0") or "1.3.0"
+    update_cask = not getattr(args, "no_cask", False)
+    json_out = getattr(args, "json", False)
+
+    print(f"Building Kite v{ver} release artifacts (DMG, ZIP, Checksums)...")
+    res = run_build_dist(version=ver, update_cask=update_cask)
+
+    if json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(format_build_dist_report(res, use_ansi=sys.stdout.isatty()))
+
+    if res.get("status") != "passed":
+        sys.exit(1)
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -3139,6 +3272,17 @@ def run_mcp_server() -> None:
                                     "type": "object",
                                     "properties": {
                                         "json": {"type": "boolean", "description": "Return raw JSON report", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_build_dist",
+                                "description": "Builds and stages release packages (DMG, ZIP), updates Homebrew Cask, and verifies DMG mount.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {"type": "string", "description": "Version string to build", "default": "1.3.0"},
+                                        "updateCask": {"type": "boolean", "description": "Update packaging/homebrew/kite.rb with new SHA256", "default": True}
                                     }
                                 }
                             }
@@ -3678,6 +3822,19 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_build_dist":
+                    ver = args.get("version", "1.3.0")
+                    up_cask = args.get("updateCask", True)
+                    res = run_build_dist(version=ver, update_cask=up_cask)
+                    rendered = format_build_dist_report(res, use_ansi=False)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -4006,6 +4163,12 @@ def main() -> None:
     p_dist = subparsers.add_parser("dist-check", help="Run cross-platform distribution and release packaging audit")
     p_dist.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
 
+    # build-dist
+    p_bdist = subparsers.add_parser("build-dist", help="Build release DMG and ZIP, update Homebrew Cask, and verify mount")
+    p_bdist.add_argument("--version", default="1.3.0", help="Version to package (default: 1.3.0)")
+    p_bdist.add_argument("--no-cask", action="store_true", help="Do not update Homebrew Cask file")
+    p_bdist.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -4062,6 +4225,8 @@ def main() -> None:
         cmd_watch_tokens(args)
     elif args.subcommand == "dist-check":
         cmd_dist_check(args)
+    elif args.subcommand == "build-dist":
+        cmd_build_dist(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
