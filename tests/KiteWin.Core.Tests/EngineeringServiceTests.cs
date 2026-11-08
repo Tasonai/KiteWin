@@ -1,3 +1,4 @@
+using KiteWin.Core.Models;
 using KiteWin.Core.Services;
 using Xunit;
 
@@ -106,5 +107,32 @@ public class EngineeringServiceTests
         var curl = ApiContractBuilder.GenerateCurlSnippets(routes);
         Assert.Contains("curl -s -X GET", curl);
         Assert.Contains("curl -s -X POST", curl);
+    }
+
+    [Fact]
+    public void CanvasTopologyValidator_DetectsDirectDbAccessAndCycles()
+    {
+        var nodes = new[]
+        {
+            new TopologyNodeDescriptor("ui", "Web Client UI", "client"),
+            new TopologyNodeDescriptor("db", "Postgres Storage", "database"),
+            new TopologyNodeDescriptor("svc_a", "Service A", "service"),
+            new TopologyNodeDescriptor("svc_b", "Service B", "service")
+        };
+
+        var conns = new[]
+        {
+            new CanvasConnection { FromId = "ui", ToId = "db", Label = "Direct SQL" },
+            new CanvasConnection { FromId = "svc_a", ToId = "svc_b", Label = "REST" },
+            new CanvasConnection { FromId = "svc_b", ToId = "svc_a", Label = "REST" }
+        };
+
+        var report = CanvasTopologyValidator.Validate(nodes, conns);
+        Assert.False(report.IsSecure);
+        Assert.Contains(report.Issues, i => i.Severity == TopologySeverity.Critical);
+
+        var md = CanvasTopologyValidator.GenerateTopologyMarkdown("Test System", report);
+        Assert.Contains("ARCHITECTURE TOPOLOGY & AUDIT REPORT", md);
+        Assert.Contains("CRITICAL", md);
     }
 }

@@ -1,6 +1,8 @@
 using Windows.ApplicationModel.DataTransfer;
 using KiteWin.Core;
 using KiteWin.Core.Models;
+using KiteWin.Core.Services;
+using KiteWin.UI.Dialogs;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -192,15 +194,16 @@ public sealed partial class CanvasPage : Page
                 };
 
                 var flyout = new MenuFlyout();
-                foreach (var proto in new[] { "Calls", "HTTP / REST", "SSE Stream", "gRPC", "WAL Query", "Depends On", "Audits" })
+                foreach (var proto in CanvasConnectionProtocol.All)
                 {
                     var item = new MenuFlyoutItem { Text = proto };
                     item.Click += (_, _) =>
                     {
                         conn.Label = proto;
+                        conn.ColorHex = CanvasConnectionProtocol.Color(proto);
                         _canvasStore.Save();
                         RenderCanvas();
-                        ShowToast($"Подпись связи изменена: {proto}");
+                        ShowToast($"Протокол связи изменен: {proto}");
                     };
                     flyout.Items.Add(item);
                 }
@@ -765,6 +768,28 @@ public sealed partial class CanvasPage : Page
         _canvasStore.Save();
         RenderCanvas();
         ShowToast("Дорожная карта: волны выполнения и статус задач отображены");
+    }
+
+    private async void OnTopologyClicked(object sender, RoutedEventArgs e)
+    {
+        var descriptors = _appModel.AllItems.Select(item => new TopologyNodeDescriptor(
+            item.Id,
+            item.Title,
+            CanvasTopologyValidator.InferRole(item.Title)
+        )).ToList();
+
+        if (descriptors.Count == 0)
+        {
+            foreach (var frame in _canvasStore.Snapshot.Frames)
+            {
+                descriptors.Add(new TopologyNodeDescriptor(frame.Id, frame.Title, CanvasTopologyValidator.InferRole(frame.Title)));
+            }
+        }
+
+        var report = CanvasTopologyValidator.Validate(descriptors, _canvasStore.Snapshot.Connections);
+        var title = _canvasStore.Snapshot.Frames.FirstOrDefault()?.Title ?? (_appModel.AllItems.FirstOrDefault()?.Title ?? "Архитектура");
+        var dialog = new TopologyValidatorDialog(XamlRoot, title, report);
+        await dialog.ShowAsync();
     }
 
     private async void OnSyncCanvasClicked(object sender, RoutedEventArgs e)

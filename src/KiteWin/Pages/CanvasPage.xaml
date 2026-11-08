@@ -63,6 +63,12 @@
                             <TextBlock Text="Дорожная карта" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <Button x:Name="TopologyBtn" Click="OnTopologyClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8A5;" FontSize="12" />
+                            <TextBlock Text="Топология" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <AppBarSeparator />
                     <Button x:Name="GroupSelectedBtn" Click="OnGroupSelectedClicked">
                         <StackPanel Orientation="Horizontal" Spacing="8">

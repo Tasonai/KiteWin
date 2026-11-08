@@ -21,6 +21,36 @@ public sealed class CanvasSticky
     public double Y { get; set; }
 }
 
+public static class CanvasConnectionProtocol
+{
+    public const string Rest = "REST";
+    public const string Trpc = "tRPC";
+    public const string Grpc = "gRPC";
+    public const string WebSocket = "WebSocket";
+    public const string EventBus = "EventBus";
+    public const string GraphQl = "GraphQL";
+    public const string Sql = "SQL";
+    public const string Queue = "Queue";
+
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        Rest, Trpc, Grpc, WebSocket, EventBus, GraphQl, Sql, Queue
+    };
+
+    public static string Color(string label)
+    {
+        var lower = (label ?? "").ToLowerInvariant();
+        if (lower.Contains("trpc")) return "#8B5CF6";
+        if (lower.Contains("grpc")) return "#10B981";
+        if (lower.Contains("ws") || lower.Contains("socket") || lower.Contains("stream")) return "#EC4899";
+        if (lower.Contains("event") || lower.Contains("bus") || lower.Contains("kafka")) return "#F59E0B";
+        if (lower.Contains("graphql") || lower.Contains("gql")) return "#E11D48";
+        if (lower.Contains("sql") || lower.Contains("db") || lower.Contains("query")) return "#64748B";
+        if (lower.Contains("queue") || lower.Contains("inngest") || lower.Contains("job")) return "#14B8A6";
+        return "#3B82F6";
+    }
+}
+
 public sealed class CanvasConnection
 {
     [JsonPropertyName("id")]
