@@ -47,19 +47,23 @@ public sealed partial class MainWindow : Window
     {
         Nav.MenuItems.Clear();
 
-        // Project Items
+        // 1. Проекты и бэклог
+        Nav.MenuItems.Add(new NavigationViewItemHeader { Content = "Проекты и бэклог" });
         AddMenuItem(SidebarPage.All);
         AddMenuItem(SidebarPage.InProgress);
         AddMenuItem(SidebarPage.Completed);
         AddMenuItem(SidebarPage.Starred);
 
-        // Divider
+        // 2. Архитектура и синтез
         Nav.MenuItems.Add(new NavigationViewItemSeparator());
-
-        // Studio & Tools
+        Nav.MenuItems.Add(new NavigationViewItemHeader { Content = "Архитектура и синтез" });
         AddMenuItem(SidebarPage.Canvas);
         AddMenuItem(SidebarPage.Translator);
         AddMenuItem(SidebarPage.Skills);
+
+        // 3. Дизайн и интеграции
+        Nav.MenuItems.Add(new NavigationViewItemSeparator());
+        Nav.MenuItems.Add(new NavigationViewItemHeader { Content = "Дизайн и интеграции" });
         AddMenuItem(SidebarPage.Sync);
     }
 

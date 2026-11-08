@@ -34,7 +34,7 @@ public static class SidebarPages
         SidebarPage.InProgress => "В разработке",
         SidebarPage.Completed => "Готово",
         SidebarPage.Starred => "Избранное",
-        SidebarPage.Canvas => "Холст идей",
+        SidebarPage.Canvas => "Холст топологии",
         SidebarPage.Translator => "Промпт-переводчик",
         SidebarPage.Skills => "База скиллов",
         SidebarPage.Sync => "Синхронизация P2P",
