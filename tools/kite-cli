@@ -3444,6 +3444,200 @@ def cmd_tui(args: argparse.Namespace) -> None:
     once = getattr(args, "once", False)
     run_tui(ep, once=once)
 
+CANVAS_VIEWER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kite Live Canvas Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0D13; color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; height: 100vh; width: 100vw; display: flex; flex-direction: column; }
+  header { height: 48px; background: #131720; border-bottom: 1px solid #1E293B; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 10; user-select: none; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13px; letter-spacing: 0.5px; }
+  .badge { background: #1E293B; color: #60A5FA; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+  .controls { display: flex; align-items: center; gap: 10px; }
+  input[type="text"] { background: #0B0D13; border: 1px solid #334155; color: #FFF; padding: 5px 10px; border-radius: 6px; font-size: 12px; width: 220px; outline: none; }
+  input[type="text"]:focus { border-color: #3B82F6; }
+  button { background: #1E293B; border: 1px solid #334155; color: #E2E8F0; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: background 0.15s; }
+  button:hover { background: #334155; }
+  #viewport { flex: 1; position: relative; cursor: grab; overflow: hidden; }
+  #viewport.panning { cursor: grabbing; }
+  #canvas-container { transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span>KITE LIVE CANVAS VIEWER</span>
+    <span class="badge" id="station-badge">Connecting...</span>
+  </div>
+  <div class="controls">
+    <input type="text" id="filter" placeholder="Filter stickies & frames..." />
+    <button id="zoom-in">+</button>
+    <button id="zoom-out">&minus;</button>
+    <button id="zoom-reset">Reset</button>
+    <button id="refresh-btn">Sync</button>
+  </div>
+</header>
+<div id="viewport">
+  <div id="canvas-container"></div>
+</div>
+<script>
+  let scale = 1, panX = 40, panY = 40;
+  let isPanning = false, startX = 0, startY = 0;
+  const container = document.getElementById("canvas-container");
+  const viewport = document.getElementById("viewport");
+  const badge = document.getElementById("station-badge");
+  const filterInput = document.getElementById("filter");
+
+  function updateTransform() {
+    container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  }
+
+  viewport.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button") || e.target.closest("input")) return;
+    isPanning = true;
+    startX = e.clientX - panX;
+    startY = e.clientY - panY;
+    viewport.classList.add("panning");
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!isPanning) return;
+    panX = e.clientX - startX;
+    panY = e.clientY - startY;
+    updateTransform();
+  });
+
+  window.addEventListener("mouseup", () => {
+    isPanning = false;
+    viewport.classList.remove("panning");
+  });
+
+  viewport.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.92;
+    const newScale = Math.min(Math.max(scale * factor, 0.2), 3);
+    const mouseX = e.clientX - viewport.offsetLeft;
+    const mouseY = e.clientY - viewport.offsetTop;
+    panX = mouseX - (mouseX - panX) * (newScale / scale);
+    panY = mouseY - (mouseY - panY) * (newScale / scale);
+    scale = newScale;
+    updateTransform();
+  }, { passive: false });
+
+  document.getElementById("zoom-in").onclick = () => { scale = Math.min(scale * 1.2, 3); updateTransform(); };
+  document.getElementById("zoom-out").onclick = () => { scale = Math.max(scale * 0.8, 0.2); updateTransform(); };
+  document.getElementById("zoom-reset").onclick = () => { scale = 1; panX = 40; panY = 40; updateTransform(); };
+
+  async function loadCanvas() {
+    try {
+      const res = await fetch("/api/canvas-svg");
+      if (res.ok) {
+        const svgText = await res.text();
+        container.innerHTML = svgText;
+        badge.textContent = "Live Connected";
+        badge.style.color = "#34D399";
+        applyFilter();
+      }
+    } catch(err) {
+      badge.textContent = "Offline";
+      badge.style.color = "#F87171";
+    }
+  }
+
+  function applyFilter() {
+    const q = filterInput.value.toLowerCase().trim();
+    document.querySelectorAll("[id^='sticky-'], [id^='frame-']").forEach(el => {
+      if (!q) { el.style.opacity = "1"; return; }
+      const text = el.textContent.toLowerCase();
+      el.style.opacity = text.includes(q) ? "1" : "0.2";
+    });
+  }
+
+  filterInput.addEventListener("input", applyFilter);
+  document.getElementById("refresh-btn").onclick = loadCanvas;
+
+  loadCanvas();
+  setInterval(loadCanvas, 3000);
+</script>
+</body>
+</html>
+"""
+
+class CanvasViewerHandler(BaseHTTPRequestHandler):
+    endpoint = MAC_ENDPOINT
+
+    def log_message(self, format, *args):
+        pass
+
+    def do_GET(self):
+        if self.path == "/" or self.path == "/index.html":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(CANVAS_VIEWER_HTML.encode("utf-8"))
+        elif self.path == "/api/canvas-svg":
+            canvas = api_get(self.endpoint, "/api/canvas")
+            svg = render_canvas_svg(canvas)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(svg.encode("utf-8"))
+        elif self.path == "/api/canvas.json":
+            canvas = api_get(self.endpoint, "/api/canvas")
+            data = json.dumps(canvas).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok","service":"kite-canvas-viewer"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def cmd_serve_canvas(args: argparse.Namespace) -> None:
+    port = int(getattr(args, "port", 24245) or 24245)
+    ep = get_active_endpoint()
+    CanvasViewerHandler.endpoint = ep
+
+    server = HTTPServer(("127.0.0.1", port), CanvasViewerHandler)
+    url = f"http://127.0.0.1:{port}"
+    print("=== KITE LIVE CANVAS WEB SERVER ===")
+    print(f"Connected Station: {ep}")
+    print(f"Live Web Viewer:   {url}")
+    print("Press Ctrl+C to terminate server.\n")
+
+    if getattr(args, "open", False) and sys.platform == "darwin":
+        subprocess.run(["open", url])
+
+    if getattr(args, "once", False):
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        time.sleep(0.1)
+        try:
+            req = urllib.request.Request(f"{url}/health")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                status_code = resp.status
+            print(f"Health probe: {status_code} OK")
+        except Exception as ex:
+            print(f"Health probe error: {ex}")
+        server.shutdown()
+        server.server_close()
+        print("Single-request test completed successfully.")
+        return
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down canvas web server...")
+        server.server_close()
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -3980,6 +4174,17 @@ def run_mcp_server() -> None:
                                     "type": "object",
                                     "properties": {
                                         "json": {"type": "boolean", "description": "Return raw JSON report", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_serve_canvas",
+                                "description": "Starts local interactive HTTP canvas web viewer (pan/zoom, live filter, SSE sync).",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "port": {"type": "integer", "description": "Local HTTP port (default: 24245)", "default": 24245},
+                                        "once": {"type": "boolean", "description": "Run single request test and exit", "default": True}
                                     }
                                 }
                             }
@@ -4589,6 +4794,17 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_serve_canvas":
+                    port = int(args.get("port", 24245))
+                    url = f"http://127.0.0.1:{port}"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": f"Canvas web viewer ready at {url} (Station: {ep}). Run 'kite serve-canvas --port {port}' to serve live."}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -4948,6 +5164,12 @@ def main() -> None:
     p_ci = subparsers.add_parser("ci-matrix", help="Audit GitHub Actions CI/CD workflows across macOS and Windows")
     p_ci.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
 
+    # serve-canvas
+    p_srv = subparsers.add_parser("serve-canvas", help="Start local interactive HTTP canvas web viewer (pan/zoom, live filter, SSE sync)")
+    p_srv.add_argument("--port", type=int, default=24245, help="Port to listen on (default: 24245)")
+    p_srv.add_argument("--open", action="store_true", help="Open browser automatically (macOS)")
+    p_srv.add_argument("--once", action="store_true", help="Serve single request and exit (for testing)")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -5016,6 +5238,8 @@ def main() -> None:
         cmd_tui(args)
     elif args.subcommand == "ci-matrix":
         cmd_ci_matrix(args)
+    elif args.subcommand == "serve-canvas":
+        cmd_serve_canvas(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
