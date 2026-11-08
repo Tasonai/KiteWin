@@ -1,5 +1,6 @@
 using KiteWin.Core;
 using KiteWin.Core.Services;
+using KiteWin.UI.Dialogs;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -445,6 +446,84 @@ public sealed partial class PromptTranslatorPage : Page
             ShowBanner($"Проект создан в {result.Directory} ({result.Files.Count} файлов): {ex.Message}", InfoBarSeverity.Informational);
         }
     }
+
+    private async Task OpenStudioAsync(string studioKey)
+    {
+        var item = CreateCurrentItem();
+        var payload = EngineeringStudioService.CreateStudio(studioKey, item.Title, item.Concept, item.Platform, item.Style);
+        var dialog = new EngineeringStudioDialog(XamlRoot, payload);
+        await dialog.ShowAsync();
+    }
+
+    // Wave 1: Schema and Data
+    private async void OnStudioDataSchema(object sender, RoutedEventArgs e)
+    {
+        var item = CreateCurrentItem();
+        var dialog = new DataSchemaDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnStudioModelRouter(object sender, RoutedEventArgs e)
+    {
+        var item = CreateCurrentItem();
+        var dialog = new ModelRouterDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnStudioIndexOptimizer(object sender, RoutedEventArgs e) => await OpenStudioAsync("indexOptimizer");
+    private async void OnStudioSeedData(object sender, RoutedEventArgs e) => await OpenStudioAsync("seedData");
+    private async void OnStudioVectorStore(object sender, RoutedEventArgs e) => await OpenStudioAsync("vectorStore");
+    private async void OnStudioMigrations(object sender, RoutedEventArgs e) => await OpenStudioAsync("migrations");
+
+    // Wave 2: Services and API
+    private async void OnStudioApiContracts(object sender, RoutedEventArgs e)
+    {
+        var item = CreateCurrentItem();
+        var dialog = new ApiContractDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnStudioRpcStudio(object sender, RoutedEventArgs e) => await OpenStudioAsync("rpcStudio");
+    private async void OnStudioEventBus(object sender, RoutedEventArgs e) => await OpenStudioAsync("eventBus");
+    private async void OnStudioJobQueue(object sender, RoutedEventArgs e) => await OpenStudioAsync("jobQueue");
+    private async void OnStudioRateLimiter(object sender, RoutedEventArgs e) => await OpenStudioAsync("rateLimiter");
+    private async void OnStudioQueryCache(object sender, RoutedEventArgs e) => await OpenStudioAsync("queryCache");
+    private async void OnStudioRealtime(object sender, RoutedEventArgs e) => await OpenStudioAsync("realtime");
+    private async void OnStudioWebhooks(object sender, RoutedEventArgs e) => await OpenStudioAsync("webhooks");
+    private async void OnStudioWebhookDispatcher(object sender, RoutedEventArgs e) => await OpenStudioAsync("webhookDispatcher");
+
+    // Wave 3: UI and Tokens
+    private async void OnStudioTokenSandbox(object sender, RoutedEventArgs e) => await OpenStudioAsync("tokenSandbox");
+    private async void OnStudioStateFlow(object sender, RoutedEventArgs e) => await OpenStudioAsync("stateFlow");
+    private async void OnStudioSitemapRouter(object sender, RoutedEventArgs e) => await OpenStudioAsync("sitemapRouter");
+    private async void OnStudioAccessibility(object sender, RoutedEventArgs e) => await OpenStudioAsync("accessibility");
+    private async void OnStudioSeoStudio(object sender, RoutedEventArgs e) => await OpenStudioAsync("seoStudio");
+    private async void OnStudioInteractiveMockup(object sender, RoutedEventArgs e) => await OpenStudioAsync("interactiveMockup");
+
+    // Wave 4: QA and Release
+    private async void OnStudioAntigravityPack(object sender, RoutedEventArgs e)
+    {
+        var item = CreateCurrentItem();
+        var dialog = new AntigravityPackDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnStudioTopologyValidator(object sender, RoutedEventArgs e)
+    {
+        var item = CreateCurrentItem();
+        var dialog = new TopologyValidatorDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnStudioErrorDoctor(object sender, RoutedEventArgs e) => await OpenStudioAsync("errorDoctor");
+    private async void OnStudioThreatModeler(object sender, RoutedEventArgs e) => await OpenStudioAsync("threatModeler");
+    private async void OnStudioSecretShield(object sender, RoutedEventArgs e) => await OpenStudioAsync("secretShield");
+    private async void OnStudioEvalHarness(object sender, RoutedEventArgs e) => await OpenStudioAsync("evalHarness");
+    private async void OnStudioGitStory(object sender, RoutedEventArgs e) => await OpenStudioAsync("gitStory");
+    private async void OnStudioDeployBlueprint(object sender, RoutedEventArgs e) => await OpenStudioAsync("deployBlueprint");
+    private async void OnStudioIncidentCommander(object sender, RoutedEventArgs e) => await OpenStudioAsync("incidentCommander");
+    private async void OnStudioStressTest(object sender, RoutedEventArgs e) => await OpenStudioAsync("stressTest");
+    private async void OnStudioRunbook(object sender, RoutedEventArgs e) => await OpenStudioAsync("runbook");
 
     private void ShowBanner(string message, InfoBarSeverity severity)
     {

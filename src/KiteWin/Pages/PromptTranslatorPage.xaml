@@ -72,6 +72,198 @@
                             <Button Click="OnPresetLinear" Content="Linear Cockpit" />
                         </StackPanel>
 
+                        <!-- Engineering Hub (4 Waves) -->
+                        <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Инженерный хаб Antigravity (4 волны)" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <DropDownButton Content="1. Схема и Данные">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Click="OnStudioDataSchema" Text="Схема данных и Prisma">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8A5;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioModelRouter" Text="LLM Маршрутизатор (Gemini 3.8)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE945;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioIndexOptimizer" Text="Оптимизатор индексов SQL">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE81E;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioSeedData" Text="Генератор тестовых данных">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8B7;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioVectorStore" Text="Векторная база RAG (pgvector)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE753;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioMigrations" Text="Миграции Expand &amp; Contract">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8D5;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+
+                            <DropDownButton Content="2. Сервисы и API">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Click="OnStudioApiContracts" Text="API-контракты и Mock-сервер">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8D2;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioRpcStudio" Text="Типизированный RPC / tRPC">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE943;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioEventBus" Text="Шина событий (EventBus)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8BD;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioJobQueue" Text="Очереди фоновых задач">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE823;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioRateLimiter" Text="Rate Limiter и DDoS-защита">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE72E;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioQueryCache" Text="Двухуровневый кэш запросов">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8C8;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioRealtime" Text="Потоковый Realtime WebSockets">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE753;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioWebhooks" Text="Симулятор вебхуков">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE71B;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioWebhookDispatcher" Text="Диспетчер исходящих вебхуков">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE724;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+
+                            <DropDownButton Content="3. UI и Токены">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Click="OnStudioTokenSandbox" Text="Песочница дизайн-токенов">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE790;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioStateFlow" Text="Стейт-машина интерфейса (XState)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8B7;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioSitemapRouter" Text="Карта экранов и роутер">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE81E;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioAccessibility" Text="Аудит доступности (WCAG 2.2)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE776;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioSeoStudio" Text="SEO и OpenGraph Next.js">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE774;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioInteractiveMockup" Text="Интерактивный HTML-макет">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8B9;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+
+                            <DropDownButton Content="4. QA и Релиз">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Click="OnStudioAntigravityPack" Text="Пакет Antigravity и Wave Runner">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE72D;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioTopologyValidator" Text="Валидатор топологии холста">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE81E;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioErrorDoctor" Text="Доктор сбоев терминала (Error Doctor)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE783;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioThreatModeler" Text="Моделирование угроз (OWASP)">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE72E;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioSecretShield" Text="Защита от утечки секретов">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8D7;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioEvalHarness" Text="Регрессионные тесты и эвалы">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE945;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioGitStory" Text="Conventional Commits и PR">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE71B;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioDeployBlueprint" Text="Blueprints деплоя Vercel/Docker">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE777;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioIncidentCommander" Text="План аварийного восстановления">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE7BA;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioStressTest" Text="Нагрузочные тесты k6">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE9D9;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Click="OnStudioRunbook" Text="Runbook разработчика">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE8D5;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </StackPanel>
+
                         <!-- Title and Concept Inputs -->
                         <TextBox
                             x:Name="InputTitleBox"

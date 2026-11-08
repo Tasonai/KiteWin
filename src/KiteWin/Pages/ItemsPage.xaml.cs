@@ -284,6 +284,13 @@ public sealed partial class ItemsPage : Page
         await dialog.ShowAsync();
     }
 
+    private async void OnOpenTopologyValidator(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var dialog = new TopologyValidatorDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
     private void ShowBanner(string text, InfoBarSeverity severity)
     {
         StatusBanner.Message = text;
