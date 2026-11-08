@@ -24,6 +24,8 @@ import uuid
 import hashlib
 import subprocess
 import plistlib
+import concurrent.futures
+import statistics
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple
@@ -4577,6 +4579,198 @@ def cmd_replay(args: argparse.Namespace) -> None:
     else:
         print(format_replay_list(history, cur_hash, use_ansi=sys.stdout.isatty()))
 
+# ==================== AUTOMATED STRESS BENCHMARK & CONCURRENCY PROFILER ====================
+
+def run_benchmark(
+    endpoint: str,
+    concurrency: int = 8,
+    total_requests: int = 100,
+    bench_type: str = "mixed"
+) -> Dict[str, Any]:
+    canvas_cache = api_get(endpoint, "/api/canvas")
+    canvas_payload = {
+        "replace": True,
+        "frames": canvas_cache.get("frames", []),
+        "stickies": canvas_cache.get("stickies", []),
+        "connections": canvas_cache.get("connections", []),
+        "referenceCards": canvas_cache.get("referenceCards", [])
+    }
+    canvas_json_bytes = json.dumps(canvas_payload).encode("utf-8")
+
+    latencies: List[float] = []
+    errors: int = 0
+    successes: int = 0
+
+    def single_request(idx: int) -> Optional[float]:
+        nonlocal errors, successes
+        t0 = time.perf_counter()
+        is_write = False
+        if bench_type == "write":
+            is_write = True
+        elif bench_type == "mixed":
+            is_write = (idx % 5 == 0)
+        elif bench_type == "read":
+            is_write = False
+
+        try:
+            if is_write:
+                req = urllib.request.Request(
+                    f"{endpoint}/api/canvas",
+                    data=canvas_json_bytes,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    method="POST"
+                )
+            else:
+                target_path = "/api/status" if idx % 3 == 0 else ("/api/ideas" if idx % 3 == 1 else "/api/canvas")
+                req = urllib.request.Request(f"{endpoint}{target_path}", headers={"Accept": "application/json"})
+
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                _ = resp.read()
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            return elapsed_ms
+        except Exception:
+            return None
+
+    t_bench_start = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, concurrency)) as executor:
+        futures = [executor.submit(single_request, i) for i in range(total_requests)]
+        for f in concurrent.futures.as_completed(futures):
+            res = f.result()
+            if res is not None:
+                latencies.append(res)
+                successes += 1
+            else:
+                errors += 1
+    total_elapsed = time.perf_counter() - t_bench_start
+
+    sse_latency_ms: Optional[float] = None
+    try:
+        received_event = threading.Event()
+        sse_time = [None]
+        def sse_sub():
+            sub_req = urllib.request.Request(f"{endpoint}/api/events")
+            try:
+                with urllib.request.urlopen(sub_req, timeout=3.0) as resp:
+                    for line in resp:
+                        l_str = line.decode("utf-8").strip()
+                        if "canvas_updated" in l_str or "ideas_updated" in l_str:
+                            sse_time[0] = time.perf_counter()
+                            received_event.set()
+                            break
+            except Exception:
+                pass
+
+        t_sub = threading.Thread(target=sse_sub, daemon=True)
+        t_sub.start()
+        time.sleep(0.08)
+
+        t_post_start = time.perf_counter()
+        post_req = urllib.request.Request(
+            f"{endpoint}/api/canvas",
+            data=canvas_json_bytes,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(post_req, timeout=3.0) as r:
+            _ = r.read()
+
+        if received_event.wait(timeout=2.0) and sse_time[0]:
+            sse_latency_ms = round((sse_time[0] - t_post_start) * 1000.0, 2)
+    except Exception:
+        sse_latency_ms = None
+
+    latencies.sort()
+    count = len(latencies)
+    if count > 0:
+        min_lat = round(latencies[0], 2)
+        max_lat = round(latencies[-1], 2)
+        p50 = round(statistics.median(latencies), 2)
+        p90 = round(latencies[min(int(count * 0.90), count - 1)], 2)
+        p95 = round(latencies[min(int(count * 0.95), count - 1)], 2)
+        p99 = round(latencies[min(int(count * 0.99), count - 1)], 2)
+        mean_lat = round(statistics.mean(latencies), 2)
+    else:
+        min_lat = max_lat = p50 = p90 = p95 = p99 = mean_lat = 0.0
+
+    rps = round(total_requests / total_elapsed, 2) if total_elapsed > 0 else 0.0
+
+    if p95 < 100.0:
+        rating = "ULTRA_FAST"
+    elif p95 < 350.0:
+        rating = "HIGH_PERFORMANCE"
+    elif p95 < 800.0:
+        rating = "ACCEPTABLE"
+    else:
+        rating = "DEGRADED"
+
+    return {
+        "status": "success",
+        "endpoint": endpoint,
+        "concurrency": concurrency,
+        "total_requests": total_requests,
+        "success_count": successes,
+        "error_count": errors,
+        "elapsed_seconds": round(total_elapsed, 3),
+        "requests_per_sec": rps,
+        "bench_type": bench_type,
+        "latencies": {
+            "min_ms": min_lat,
+            "mean_ms": mean_lat,
+            "p50_ms": p50,
+            "p90_ms": p90,
+            "p95_ms": p95,
+            "p99_ms": p99,
+            "max_ms": max_lat
+        },
+        "sse_broadcast_latency_ms": sse_latency_ms,
+        "performance_rating": rating
+    }
+
+def format_benchmark_report(res: Dict[str, Any], use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+
+    lat = res.get("latencies", {})
+    sse = res.get("sse_broadcast_latency_ms")
+    sse_str = f"{sse} ms" if sse is not None else "N/A"
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE AUTOMATED CONCURRENCY & STRESS BENCHMARK ==={C_RESET}")
+    lines.append("-" * 74)
+    lines.append(f"Target Station:     {C_BOLD}{res.get('endpoint')}{C_RESET}")
+    lines.append(f"Workload Profile:   {res.get('bench_type').upper()} ({res.get('total_requests')} reqs @ {res.get('concurrency')} workers)")
+    lines.append(f"Duration:           {res.get('elapsed_seconds')}s | Throughput: {C_GREEN}{C_BOLD}{res.get('requests_per_sec')} req/sec{C_RESET}")
+    lines.append(f"Success / Errors:   {res.get('success_count')} OK / {res.get('error_count')} Failed")
+    lines.append("-" * 74)
+    lines.append(f"{C_BOLD}LATENCY PERCENTILES (Round-Trip Time){C_RESET}")
+    lines.append(f"  Min:       {lat.get('min_ms'):>8.2f} ms")
+    lines.append(f"  Mean:      {lat.get('mean_ms'):>8.2f} ms")
+    lines.append(f"  p50 (Med): {lat.get('p50_ms'):>8.2f} ms")
+    lines.append(f"  p90:       {lat.get('p90_ms'):>8.2f} ms")
+    lines.append(f"  p95:       {lat.get('p95_ms'):>8.2f} ms")
+    lines.append(f"  p99:       {lat.get('p99_ms'):>8.2f} ms")
+    lines.append(f"  Max:       {lat.get('max_ms'):>8.2f} ms")
+    lines.append("-" * 74)
+    lines.append(f"Real-Time SSE Delay: {C_CYAN}{sse_str}{C_RESET}")
+    lines.append(f"Overall Rating:      {C_BOLD}{C_GREEN}{res.get('performance_rating')}{C_RESET}")
+    lines.append("-" * 74)
+    return "\n".join(lines)
+
+def cmd_benchmark(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    concurrency = getattr(args, "concurrency", 8) or 8
+    requests = getattr(args, "requests", 100) or 100
+    b_type = getattr(args, "type", "mixed") or "mixed"
+    json_out = getattr(args, "json", False)
+
+    res = run_benchmark(ep, concurrency=concurrency, total_requests=requests, bench_type=b_type)
+    if json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(format_benchmark_report(res, use_ansi=sys.stdout.isatty()))
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -5174,6 +5368,18 @@ def run_mcp_server() -> None:
                                         },
                                         "target": {"type": "string", "description": "Target checkpoint index (e.g. 1) or hash prefix for diff/rollback"},
                                         "message": {"type": "string", "description": "Checkpoint message when recording"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_benchmark",
+                                "description": "Automated stress benchmark & concurrency profiler measuring throughput, percentiles (p50, p95, p99), and SSE broadcast delays.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "concurrency": {"type": "integer", "description": "Number of concurrent worker threads (default: 8)", "default": 8},
+                                        "requests": {"type": "integer", "description": "Total number of benchmark requests (default: 100)", "default": 100},
+                                        "type": {"type": "string", "enum": ["mixed", "read", "write", "sse"], "description": "Benchmark workload type (default: mixed)", "default": "mixed"}
                                     }
                                 }
                             }
@@ -5937,6 +6143,20 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_benchmark":
+                    concurrency = args.get("concurrency", 8)
+                    requests = args.get("requests", 100)
+                    b_type = args.get("type", "mixed")
+                    res = run_benchmark(ep, concurrency=concurrency, total_requests=requests, bench_type=b_type)
+                    rendered = format_benchmark_report(res, use_ansi=False)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -6328,6 +6548,13 @@ def main() -> None:
     p_replay.add_argument("--step", action="store_true", help="Display stepwise evolutionary timeline of architecture mutations")
     p_replay.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # benchmark
+    p_bench = subparsers.add_parser("benchmark", help="Automated stress benchmark & concurrency profiler for Kite Station")
+    p_bench.add_argument("--concurrency", type=int, default=8, help="Number of concurrent worker threads (default: 8)")
+    p_bench.add_argument("--requests", type=int, default=100, help="Total number of benchmark requests (default: 100)")
+    p_bench.add_argument("--type", choices=["mixed", "read", "write", "sse"], default="mixed", help="Benchmark workload type (default: mixed)")
+    p_bench.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -6406,6 +6633,8 @@ def main() -> None:
         cmd_export_project(args)
     elif args.subcommand == "replay":
         cmd_replay(args)
+    elif args.subcommand == "benchmark":
+        cmd_benchmark(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
