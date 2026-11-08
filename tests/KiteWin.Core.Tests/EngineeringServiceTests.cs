@@ -135,4 +135,34 @@ public class EngineeringServiceTests
         Assert.Contains("ARCHITECTURE TOPOLOGY & AUDIT REPORT", md);
         Assert.Contains("CRITICAL", md);
     }
+
+    [Fact]
+    public void CanvasAutoArchitect_SynthesizesProductionTopology()
+    {
+        var res = CanvasAutoArchitect.Synthesize(
+            "Fintech App",
+            "Обработка платежей и транзакций",
+            "Windows 11",
+            "Fluent Design"
+        );
+
+        Assert.Equal(5, res.Frames.Count);
+        Assert.Equal(10, res.Stickies.Count);
+        Assert.Equal(9, res.Connections.Count);
+
+        var descriptors = new List<TopologyNodeDescriptor>();
+        foreach (var s in res.Stickies)
+        {
+            descriptors.Add(new TopologyNodeDescriptor(
+                $"sticky-{s.Id}",
+                s.Text,
+                CanvasTopologyValidator.InferRole(s.Text)
+            ));
+        }
+
+        var report = CanvasTopologyValidator.Validate(descriptors, res.Connections);
+        Assert.True(report.IsSecure);
+        Assert.Equal(100, report.HealthScore);
+        Assert.Empty(report.Issues);
+    }
 }

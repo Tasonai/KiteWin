@@ -792,6 +792,29 @@ public sealed partial class CanvasPage : Page
         await dialog.ShowAsync();
     }
 
+    private void OnAutoArchitectClicked(object sender, RoutedEventArgs e)
+    {
+        var openItem = _appModel.Selection ?? _appModel.Items.FirstOrDefault();
+        var title = openItem?.Title ?? "Архитектура проекта";
+        var concept = openItem?.Concept ?? "Полнофункциональный бэкенд и микросервисы";
+
+        var res = CanvasAutoArchitect.Synthesize(title, concept, "Windows 11", "Fluent Design");
+
+        _canvasStore.Snapshot.Frames.Clear();
+        _canvasStore.Snapshot.Frames.AddRange(res.Frames);
+
+        _canvasStore.Snapshot.Stickies.Clear();
+        _canvasStore.Snapshot.Stickies.AddRange(res.Stickies);
+
+        _canvasStore.Snapshot.Connections.Clear();
+        _canvasStore.Snapshot.Connections.AddRange(res.Connections);
+
+        _canvasStore.Save();
+        RenderCanvas();
+
+        ShowToast("Авто-Топология: синтезировано 5 фреймов, 10 сервисов и 9 протокольных связей");
+    }
+
     private async void OnSyncCanvasClicked(object sender, RoutedEventArgs e)
     {
         SyncCanvasBtn.IsEnabled = false;

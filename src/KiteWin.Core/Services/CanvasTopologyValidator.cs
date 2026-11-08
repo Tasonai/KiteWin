@@ -41,20 +41,24 @@ public static class CanvasTopologyValidator
     {
         var lower = (title ?? "").ToLowerInvariant();
         if (lower.Contains("db") || lower.Contains("database") || lower.Contains("postgres") ||
-            lower.Contains("redis") || lower.Contains("mongo") || lower.Contains("sql") || lower.Contains("storage"))
+            lower.Contains("redis") || lower.Contains("mongo") || lower.Contains("sql") || lower.Contains("storage") ||
+            lower.Contains("база") || lower.Contains("хранилище") || lower.Contains("кэш") || lower.Contains("бд"))
         {
             return "database";
         }
         if (lower.Contains("ui") || lower.Contains("frontend") || lower.Contains("client") ||
-            lower.Contains("mobile") || lower.Contains("web") || lower.Contains("app") || lower.Contains("view"))
+            lower.Contains("mobile") || lower.Contains("web") || lower.Contains("app") || lower.Contains("view") ||
+            lower.Contains("клиент") || lower.Contains("интерфейс") || lower.Contains("состояни"))
         {
             return "client";
         }
-        if (lower.Contains("gateway") || lower.Contains("proxy") || lower.Contains("ingress") || lower.Contains("router"))
+        if (lower.Contains("gateway") || lower.Contains("proxy") || lower.Contains("ingress") || lower.Contains("router") ||
+            lower.Contains("шлюз") || lower.Contains("маршрутизатор"))
         {
             return "gateway";
         }
-        if (lower.Contains("queue") || lower.Contains("kafka") || lower.Contains("bus") || lower.Contains("event"))
+        if (lower.Contains("queue") || lower.Contains("kafka") || lower.Contains("bus") || lower.Contains("event") ||
+            lower.Contains("очередь") || lower.Contains("событи") || lower.Contains("брокер"))
         {
             return "eventbus";
         }
