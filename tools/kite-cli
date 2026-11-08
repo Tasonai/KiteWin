@@ -3841,6 +3841,149 @@ def cmd_lint_arch(args: argparse.Namespace) -> None:
     if res.get("status") == "failed" and not auto_fix:
         sys.exit(1)
 
+def generate_prd(idea: Dict[str, Any], canvas: Dict[str, Any]) -> str:
+    title = idea.get("title", "Kite Project")
+    concept = idea.get("description") or idea.get("concept") or "Enterprise application architecture and domain management."
+    platform = (idea.get("platform") or "web").capitalize()
+    style = idea.get("preferredStyle") or "Editorial & Swiss Modern"
+    answers = idea.get("interviewAnswers", [])
+
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+    conns = canvas.get("connections", [])
+
+    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+    lines = []
+    lines.append(f"# Product Requirements Document (PRD): {title}")
+    lines.append(f"**Date:** {now_iso} | **Status:** Draft (Approved for Engineering) | **Platform:** {platform}")
+    lines.append(f"**Design System Preset:** {style} | **Architecture Standard:** Google DeepMind Antigravity")
+    lines.append("")
+
+    lines.append("## 1. Executive Summary & Problem Statement")
+    lines.append("### 1.1 Context & Vision")
+    lines.append(concept.strip())
+    lines.append("")
+    lines.append("### 1.2 Jobs To Be Done (JTBD)")
+    lines.append(f"- **When** users need to design, inspect, and implement reliable software for {title},")
+    lines.append("- **I want to** leverage type-safe architectural blueprints, reactive state, and verified local persistence,")
+    lines.append("- **So I can** ship production features rapidly with zero drift and guaranteed quality gates.")
+    lines.append("")
+
+    if answers:
+        lines.append("### 1.3 Interview Decisions & Architectural Trade-offs")
+        for idx, a in enumerate(answers):
+            q_text = a.get("question", f"Decision {idx+1}")
+            choice = a.get("answer") or a.get("selectedOption", "Standard")
+            lines.append(f"- **{q_text}:** `{choice}`")
+        lines.append("")
+
+    lines.append("## 2. System Architecture & Topology Contract")
+    lines.append("The system follows a strict layered architecture validated by Kite Architecture Linter.")
+    lines.append("")
+    lines.append("### 2.1 Architectural Boundaries (Frames)")
+    if frames:
+        for f in frames:
+            f_title = f.get('title', 'Frame')
+            f_w = f.get('width', 360)
+            f_h = f.get('height', 420)
+            f_x = f.get('x', 0)
+            f_y = f.get('y', 0)
+            lines.append(f"- **{f_title}:** Bounding box `{f_w}x{f_h}` at position `({f_x}, {f_y})`.")
+    else:
+        lines.append("- **UI & Presentation Layer:** User interface controls, design tokens, HUD viewports.")
+        lines.append("- **Service & Transport Layer:** REST/gRPC endpoints, P2P mesh sync engine, event bus.")
+        lines.append("- **Data & Persistence Layer:** SQLite WAL store, SwiftData repository, schema migrations.")
+    lines.append("")
+
+    lines.append("### 2.2 Protocols & Integration Edges")
+    if conns:
+        for c in conns:
+            lbl = c.get("label", "Connects")
+            fid = c.get("fromId", "")
+            tid = c.get("toId", "")
+            lines.append(f"- `{fid}` &rarr; `{tid}` via `{lbl}`")
+    else:
+        lines.append("- View &rarr; Service: Typed HTTP / SSE JSON RPC.")
+        lines.append("- Service &rarr; Data: Async repository pattern with Write-Ahead Logging.")
+    lines.append("")
+
+    lines.append("## 3. Design System & Grid Standards")
+    lines.append(f"- **Preset:** `{style}`")
+    lines.append("- **Grid Compliance:**")
+    lines.append("  - macOS: Apple Human Interface Guidelines 4pt/8pt rhythm.")
+    lines.append("  - Windows: Windows 11 BAWA 4 epx rhythm.")
+    lines.append("- **Typography & Symbols:** Strictly 100% native glyphs (SF Symbols / Segoe Fluent Icons). Zero emojis.")
+    lines.append("- **Color System:** Dark surface `#0B0D13`, border `#1E293B`, accents `#3B82F6` and `#10B981`.")
+    lines.append("")
+
+    lines.append("## 4. Functional Requirements")
+    lines.append("### FR-1: Core Workspace & Canvas Management")
+    lines.append("- The application shall initialize persistent state upon launch without cloud lock-in.")
+    lines.append("- Users can inspect and manipulate architectural stickies, frames, and connections.")
+    lines.append("")
+    lines.append("### FR-2: Real-time Synchronization & Conflict Resolution")
+    lines.append("- Stations broadcast state changes via Server-Sent Events (SSE) within 50ms latency.")
+    lines.append("- Multi-node mutations resolve deterministically using union conflict resolution.")
+    lines.append("")
+    lines.append("### FR-3: AI & Offline Fallback Engine")
+    lines.append("- The system routes tasks through Gemini 3.8, falling back to local Ollama or deterministic offline compiler.")
+    lines.append("")
+
+    lines.append("## 5. Non-Functional Requirements (NFR)")
+    lines.append("- **NFR-1 (Latency):** Interactive canvas interactions shall render at 60 FPS (<16ms frame time).")
+    lines.append("- **NFR-2 (Reliability):** 100% passing automated test suite (110 self-tests on macOS, zero gate violations on Windows).")
+    lines.append("- **NFR-3 (Accessibility):** WCAG 2.2 Level AA compliance, full keyboard navigation and high-contrast support.")
+    lines.append("- **NFR-4 (Security):** Zero plain-text credentials; secrets sanitized before logging or disk persistence.")
+    lines.append("")
+
+    lines.append("## 6. Execution Waves & Delivery Plan")
+    lines.append("- **Wave 1 (Data & Schema):** Relational tables, WAL store, data models, initial migrations.")
+    lines.append("- **Wave 2 (Services & Transport):** Type-safe endpoints, P2P sync engine, event bus, SSE stream.")
+    lines.append("- **Wave 3 (Presentation & UI):** Native views, tokens, interactive canvas, accessibility audit.")
+    lines.append("- **Wave 4 (QA & Release):** End-to-end integration tests, package DMG/ZIP/Installer, CI/CD matrix.")
+
+    return "\n".join(lines)
+
+def cmd_prd(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    ideas = api_get(ep, "/api/ideas").get("ideas", [])
+    canvas = api_get(ep, "/api/canvas")
+
+    q = getattr(args, "query", "") or ""
+    matched = None
+    if q:
+        matched = next((i for i in ideas if q.lower() in i.get("title", "").lower() or q.lower() in i.get("id", "").lower()), None)
+    else:
+        matched = next((i for i in ideas if i.get("isStarred")), ideas[0] if ideas else None)
+
+    if not matched:
+        matched = {
+            "title": "Kite Architecture Project",
+            "concept": "Integrated cross-platform workspace for architecture and system design.",
+            "platform": "desktop",
+            "preferredStyle": "Editorial & Swiss Modern"
+        }
+
+    prd_md = generate_prd(matched, canvas)
+    out_path = getattr(args, "out", "") or ""
+    json_out = getattr(args, "json", False)
+
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(prd_md)
+        print(f"PRD generated and saved to {os.path.abspath(out_path)} ({len(prd_md)} bytes).")
+    elif json_out:
+        res = {
+            "title": matched.get("title"),
+            "platform": matched.get("platform"),
+            "prd": prd_md,
+            "bytes": len(prd_md)
+        }
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(prd_md)
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -4399,6 +4542,17 @@ def run_mcp_server() -> None:
                                     "properties": {
                                         "fix": {"type": "boolean", "description": "Automatically apply missing architectural boundaries to Canvas", "default": False},
                                         "json": {"type": "boolean", "description": "Return raw JSON report", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_prd",
+                                "description": "Compiles comprehensive Product Requirements Document (PRD.md) from idea, concept, and live canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "query": {"type": "string", "description": "Idea title or search query"},
+                                        "out": {"type": "string", "description": "File path to save PRD.md to"}
                                     }
                                 }
                             }
@@ -5032,6 +5186,39 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_prd":
+                    q = args.get("query", "")
+                    out_path = args.get("out")
+                    ideas = api_get(ep, "/api/ideas").get("ideas", [])
+                    canvas = api_get(ep, "/api/canvas")
+                    matched = None
+                    if q:
+                        matched = next((i for i in ideas if q.lower() in i.get("title", "").lower() or q.lower() in i.get("id", "").lower()), None)
+                    else:
+                        matched = next((i for i in ideas if i.get("isStarred")), ideas[0] if ideas else None)
+
+                    if not matched:
+                        matched = {
+                            "title": "Kite Architecture Project",
+                            "concept": "Integrated cross-platform workspace for architecture and system design.",
+                            "platform": "desktop",
+                            "preferredStyle": "Editorial & Swiss Modern"
+                        }
+                    prd_text = generate_prd(matched, canvas)
+                    if out_path:
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(prd_text)
+                        res_msg = f"PRD successfully generated and saved to {os.path.abspath(out_path)} ({len(prd_text)} bytes)."
+                    else:
+                        res_msg = prd_text
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": res_msg}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -5402,6 +5589,12 @@ def main() -> None:
     p_larch.add_argument("--fix", action="store_true", help="Automatically inject missing architectural boundaries to Canvas")
     p_larch.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
 
+    # prd
+    p_prd = subparsers.add_parser("prd", help="Synthesize comprehensive Product Requirements Document (PRD.md)")
+    p_prd.add_argument("query", nargs="?", default="", help="Idea title or search query")
+    p_prd.add_argument("--out", help="Output file path (default: stdout)")
+    p_prd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -5474,6 +5667,8 @@ def main() -> None:
         cmd_serve_canvas(args)
     elif args.subcommand == "lint-arch":
         cmd_lint_arch(args)
+    elif args.subcommand == "prd":
+        cmd_prd(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
