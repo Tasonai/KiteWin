@@ -165,4 +165,28 @@ public class EngineeringServiceTests
         Assert.Equal(100, report.HealthScore);
         Assert.Empty(report.Issues);
     }
+
+    [Fact]
+    public void ProjectWatcherService_DetectsWaveArtifactsAndCalculatesProgress()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(Path.Combine(tempDir, "prisma"));
+        File.WriteAllText(Path.Combine(tempDir, "prisma", "schema.prisma"), "model User { id String @id }");
+
+        Directory.CreateDirectory(Path.Combine(tempDir, "src", "api"));
+        File.WriteAllText(Path.Combine(tempDir, "src", "api", "client.ts"), "export const api = {}");
+
+        var waves = AntigravityPackGenerator.BuildWaves("Test", "Prisma and API", "Windows 11", "Fluent Design");
+        var snapshot = ProjectWatcherService.AnalyzeDirectory(tempDir, waves);
+
+        try
+        {
+            Directory.Delete(tempDir, true);
+        }
+        catch { }
+
+        Assert.NotEmpty(snapshot.CompletedTaskKeys);
+        Assert.True(snapshot.WavePercentages[1] > 0);
+        Assert.NotEmpty(snapshot.DetectedArtifacts);
+    }
 }

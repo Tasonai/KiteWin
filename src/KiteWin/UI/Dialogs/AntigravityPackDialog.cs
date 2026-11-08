@@ -63,6 +63,22 @@ public sealed class AntigravityPackDialog : ContentDialog
         };
         headerPanel.Children.Add(statusBadge);
 
+        var watcherBtn = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new FontIcon { Glyph = "\uE9D2", FontSize = 12 },
+                    new TextBlock { Text = "Live Watcher (Авто-прогресс)" }
+                }
+            }
+        };
+        watcherBtn.Click += OnLiveWatcherClicked;
+        headerPanel.Children.Add(watcherBtn);
+
         Grid.SetRow(headerPanel, 0);
         root.Children.Add(headerPanel);
 
@@ -115,6 +131,23 @@ public sealed class AntigravityPackDialog : ContentDialog
                 _contentBox.Text = _waves[waveId - 1].Prompt;
             }
         }
+    }
+
+    private void OnLiveWatcherClicked(object sender, RoutedEventArgs e)
+    {
+        var targetDir = AppDomain.CurrentDomain.BaseDirectory;
+        var snapshot = ProjectWatcherService.AnalyzeDirectory(targetDir, _waves);
+        _contentBox.Text = $"=== LIVE WATCHER: ПРОГРЕСС ПРОЕКТА ===\n" +
+            $"Отслеживаемый путь: {snapshot.WatchedPath}\n" +
+            $"Общий прогресс: {snapshot.OverallPercentage}%\n" +
+            $"Волна 1 (Схема и Модели): {snapshot.WavePercentages[1]}%\n" +
+            $"Волна 2 (Сервисы и API): {snapshot.WavePercentages[2]}%\n" +
+            $"Волна 3 (UI Компоненты): {snapshot.WavePercentages[3]}%\n" +
+            $"Волна 4 (Тесты и CI/CD): {snapshot.WavePercentages[4]}%\n\n" +
+            $"Обнаруженные артефакты ({snapshot.DetectedArtifacts.Count}):\n" +
+            string.Join("\n", snapshot.DetectedArtifacts.Select(a => $"[{a.Category}] {a.RelativePath}")) + "\n\n" +
+            $"Выполненные задачи ({snapshot.CompletedTaskKeys.Count}):\n" +
+            string.Join("\n", snapshot.CompletedTaskKeys.Select(k => $"[x] {k}"));
     }
 
     private static void CopyToClipboard(string text)
