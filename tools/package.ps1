@@ -1,8 +1,8 @@
 # Packages KiteWin for distribution: creates standalone ZIP and Inno Setup installer.
-param([switch]$Aot)
+param([switch]$Aot, [string]$Version = '1.3.0')
 $ErrorActionPreference = 'Continue'
 $name = 'KiteWin'
-$version = '1.0.0'
+$version = $Version
 $root = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $root 'dist'
 Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue

@@ -2794,7 +2794,124 @@ def cmd_build_dist(args: argparse.Namespace) -> None:
     if res.get("status") != "passed":
         sys.exit(1)
 
-def check_llm_providers() -> Dict[str, Any]:
+def run_ci_matrix() -> Dict[str, Any]:
+    mac_root = "/Users/tasonai/Developer/Kite"
+    win_root = "/Users/tasonai/Developer/KiteWindows"
+
+    workflows = [
+        {
+            "platform": "macOS",
+            "name": "Kite macOS CI",
+            "candidates": [
+                os.path.join(mac_root, "ci", "workflows", "ci.yml"),
+                os.path.join(mac_root, ".github", "workflows", "ci.yml")
+            ],
+            "expected_runner": "macos-14",
+            "expected_triggers": ["push", "pull_request"]
+        },
+        {
+            "platform": "macOS",
+            "name": "Kite macOS Release",
+            "candidates": [
+                os.path.join(mac_root, "ci", "workflows", "release.yml"),
+                os.path.join(mac_root, ".github", "workflows", "release.yml")
+            ],
+            "expected_runner": "macos-14",
+            "expected_triggers": ["push", "workflow_dispatch"]
+        },
+        {
+            "platform": "Windows",
+            "name": "Kite Windows CI",
+            "candidates": [
+                os.path.join(win_root, "ci", "workflows", "ci.yml"),
+                os.path.join(win_root, ".github", "workflows", "ci.yml")
+            ],
+            "expected_runner": "windows-latest",
+            "expected_triggers": ["push", "pull_request"]
+        },
+        {
+            "platform": "Windows",
+            "name": "Kite Windows Release",
+            "candidates": [
+                os.path.join(win_root, "ci", "workflows", "release.yml"),
+                os.path.join(win_root, ".github", "workflows", "release.yml")
+            ],
+            "expected_runner": "windows-latest",
+            "expected_triggers": ["push", "workflow_dispatch"]
+        }
+    ]
+
+    checks = []
+    for wf in workflows:
+        p = next((cand for cand in wf["candidates"] if os.path.isfile(cand)), wf["candidates"][0])
+        exists = os.path.isfile(p)
+        content = ""
+        if exists:
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                content = ""
+
+        runner_ok = exists and wf["expected_runner"] in content
+        triggers_ok = exists and all(trig in content for trig in wf["expected_triggers"])
+        passed = exists and runner_ok and triggers_ok
+
+        details = f"{wf['expected_runner']} on {', '.join(wf['expected_triggers'])}" if passed else ("File missing" if not exists else "Runner/Triggers mismatch")
+        checks.append({
+            "platform": wf["platform"],
+            "name": wf["name"],
+            "file": os.path.basename(p),
+            "path": p,
+            "passed": passed,
+            "runner": wf["expected_runner"],
+            "details": details
+        })
+
+    all_pass = all(c["passed"] for c in checks)
+    return {
+        "status": "passed" if all_pass else "failed",
+        "total": len(checks),
+        "passed": sum(1 for c in checks if c["passed"]),
+        "failed": sum(1 for c in checks if not c["passed"]),
+        "checks": checks
+    }
+
+def format_ci_matrix_report(res: Dict[str, Any], use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_RED = "\033[1;31m" if use_ansi else ""
+    C_DIM = "\033[90m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE CROSS-PLATFORM CI/CD MATRIX AUDIT ==={C_RESET}")
+    lines.append("-" * 72)
+    for c in res.get("checks", []):
+        st = f"{C_GREEN}[PASS]{C_RESET}" if c.get("passed") else f"{C_RED}[FAIL]{C_RESET}"
+        plat = c.get("platform", "")
+        name = c.get("name", "")
+        det = c.get("details", "")
+        lines.append(f"{st} [{plat:<7}] {name:<26} {C_DIM}({det}){C_RESET}")
+    lines.append("-" * 72)
+    if res.get("status") == "passed":
+        lines.append(f"{C_BOLD}{C_GREEN}ALL CI/CD WORKFLOWS VALIDATED (GitHub Actions Ready){C_RESET}")
+    else:
+        failed_count = res.get("failed", 0)
+        lines.append(f"{C_BOLD}{C_RED}CI/CD MATRIX AUDIT FAILED ({failed_count} workflow issues){C_RESET}")
+    return "\n".join(lines)
+
+def cmd_ci_matrix(args: argparse.Namespace) -> None:
+    json_out = getattr(args, "json", False)
+    res = run_ci_matrix()
+    if json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+    else:
+        print(format_ci_matrix_report(res, use_ansi=sys.stdout.isatty()))
+
+    if res.get("status") != "passed":
+        sys.exit(1)
     providers = []
 
     # 1. Gemini API
@@ -3855,6 +3972,16 @@ def run_mcp_server() -> None:
                                         "clipboard": {"type": "boolean", "description": "Copy SVG markup to clipboard", "default": False}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_ci_matrix",
+                                "description": "Audits cross-platform GitHub Actions CI and Release matrix workflows across macOS and Windows.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return raw JSON report", "default": False}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -4451,6 +4578,17 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_ci_matrix":
+                    res = run_ci_matrix()
+                    rendered = format_ci_matrix_report(res, use_ansi=False)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -4806,6 +4944,10 @@ def main() -> None:
     p_tui = subparsers.add_parser("tui", help="Launch interactive Terminal User Interface (TUI) for Kite Station")
     p_tui.add_argument("--once", action="store_true", help="Render single dashboard snapshot and exit")
 
+    # ci-matrix
+    p_ci = subparsers.add_parser("ci-matrix", help="Audit GitHub Actions CI/CD workflows across macOS and Windows")
+    p_ci.add_argument("--json", action="store_true", help="Output machine-readable JSON report")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -4872,6 +5014,8 @@ def main() -> None:
         cmd_snapshot(args)
     elif args.subcommand == "tui":
         cmd_tui(args)
+    elif args.subcommand == "ci-matrix":
+        cmd_ci_matrix(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
