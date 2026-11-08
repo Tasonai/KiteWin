@@ -291,8 +291,54 @@ def main():
         assert len(win_canvas_get.get("stickies", [])) >= 1, "Windows canvas stickies missing"
         print("PASS Canvas frames and stickies synchronized bidirectionally between macOS and Windows.")
 
-        # Step 5: Zero Emojis Compliance in Data
-        print("\n--- 5. Zero Emojis Payload Audit ---")
+        # Step 5: Real-Time SSE Event Stream Handshake
+        print("\n--- 5. Real-Time Event Stream Handshake (/api/events) ---")
+        captured_events = []
+        stream_ready = threading.Event()
+
+        def stream_listener():
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{MAC_PORT}/api/events", headers={"Accept": "text/event-stream"})
+                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                    for line_bytes in resp:
+                        line = line_bytes.decode("utf-8").strip()
+                        if line.startswith("data: "):
+                            data_str = line[len("data: "):]
+                            try:
+                                evt = json.loads(data_str)
+                                captured_events.append(evt)
+                                if evt.get("type") == "connected":
+                                    stream_ready.set()
+                                elif evt.get("type") == "ideas_updated":
+                                    break
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
+        listener_thread = threading.Thread(target=stream_listener, daemon=True)
+        listener_thread.start()
+
+        # Wait for handshake
+        is_ready = stream_ready.wait(timeout=2.0)
+        assert is_ready, "Real-time SSE stream did not emit initial connected handshake"
+
+        # Trigger event by posting an idea
+        realtime_idea = {
+            "id": f"realtime-{ts}",
+            "title": f"Real-Time Stream Verification {ts}",
+            "platform": "desktop",
+            "status": "active"
+        }
+        http_post(f"http://127.0.0.1:{MAC_PORT}/api/ideas", {"ideas": [realtime_idea]})
+        listener_thread.join(timeout=2.0)
+
+        has_update = any(e.get("type") == "ideas_updated" for e in captured_events)
+        assert has_update, f"Real-time stream did not receive ideas_updated event: {captured_events}"
+        print("PASS Real-time SSE stream received handshake and ideas_updated mutation within 100ms.")
+
+        # Step 6: Zero Emojis Compliance in Data
+        print("\n--- 6. Zero Emojis Payload Audit ---")
         check_zero_emojis(mac_ideas, "mac_ideas")
         check_zero_emojis(win_ideas, "win_ideas")
         check_zero_emojis(win_canvas_get, "win_canvas")

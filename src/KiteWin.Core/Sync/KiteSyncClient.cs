@@ -335,6 +335,63 @@ public sealed class KiteSyncClient : IDisposable
         return $"{trimmed}{path}";
     }
 
+    /// <summary>
+    /// Starts background real-time SSE listener for remote changes (ideas_updated, canvas_updated).
+    /// </summary>
+    public async Task StartEventsStreamAsync(string endpoint, Action<string, string> onEvent, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var url = FormatUrl(endpoint, "/api/events");
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    await Task.Delay(3000, ct);
+                    continue;
+                }
+
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream && !ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    if (line.StartsWith("data: ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var json = line["data: ".Length..].Trim();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("type", out var typeProp))
+                            {
+                                var type = typeProp.GetString() ?? "";
+                                onEvent(type, json);
+                            }
+                        }
+                        catch
+                        {
+                            // ignore malformed SSE json line
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch
+            {
+                // Reconnect backoff
+                await Task.Delay(3000, ct);
+            }
+        }
+    }
+
     public void Dispose()
     {
         _http.Dispose();

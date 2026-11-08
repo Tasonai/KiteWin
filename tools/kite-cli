@@ -11,6 +11,7 @@ Zero Emojis: Strictly clean typography and standard symbols.
 import sys
 import os
 import json
+import time
 import urllib.request
 import urllib.error
 import argparse
@@ -412,6 +413,55 @@ def cmd_sync(args: argparse.Namespace) -> None:
         print(f"Canvas sync status: {c_res.get('status')}")
     except Exception as ex:
         print(f"Sync error: {ex}")
+
+    if getattr(args, "watch", False):
+        setattr(args, "auto_sync", True)
+        cmd_watch(args)
+
+def cmd_watch(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    url = f"{ep}/api/events"
+    auto_sync = getattr(args, "auto_sync", False)
+    peer_ep = getattr(args, "peer", None) or ("http://127.0.0.1:24243" if "24242" in ep else "http://127.0.0.1:24242")
+
+    print("=== Kite Real-time P2P Event Stream ===", flush=True)
+    print(f"Station:   {ep}", flush=True)
+    print(f"Endpoint:  {url}", flush=True)
+    print(f"Auto-Sync: {'ACTIVE (Peer: ' + peer_ep + ')' if auto_sync else 'DISABLED'}", flush=True)
+    print("Streaming events live. Press Ctrl+C to terminate.\n", flush=True)
+
+    req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+    try:
+        with urllib.request.urlopen(req) as resp:
+            for line_bytes in resp:
+                line = line_bytes.decode("utf-8").strip()
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    raw_data = line[len("data: "):]
+                    now_str = time.strftime("%H:%M:%S")
+                    try:
+                        evt = json.loads(raw_data)
+                        evt_type = evt.get("type", "unknown")
+                        payload = evt.get("payload", {})
+                        print(f"[{now_str}] EVENT: {evt_type} | Payload: {json.dumps(payload, ensure_ascii=False)}", flush=True)
+                        if auto_sync and evt_type in ("ideas_updated", "canvas_updated"):
+                            print(f"[{now_str}] Triggering automatic reactive sync with {peer_ep}...", flush=True)
+                            try:
+                                peer_ideas = api_get(peer_ep, "/api/ideas")
+                                res = api_post(ep, "/api/ideas", peer_ideas)
+                                print(f"[{now_str}] Auto-Sync ideas: imported {res.get('imported', 0)}", flush=True)
+                                peer_canvas = api_get(peer_ep, "/api/canvas")
+                                c_res = api_post(ep, "/api/canvas", peer_canvas)
+                                print(f"[{now_str}] Auto-Sync canvas: {c_res.get('status', 'ok')}", flush=True)
+                            except Exception as sync_err:
+                                print(f"[{now_str}] Auto-Sync failed: {sync_err}", flush=True)
+                    except Exception:
+                        print(f"[{now_str}] RAW: {raw_data}", flush=True)
+    except KeyboardInterrupt:
+        print("\nEvent stream listener terminated cleanly.", flush=True)
+    except Exception as ex:
+        sys.stderr.write(f"Stream error: {ex}\n")
 
 def cmd_spec(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
@@ -1428,6 +1478,12 @@ def main() -> None:
     # sync
     p_sync = subparsers.add_parser("sync", help="Trigger bidirectional P2P sync with remote station")
     p_sync.add_argument("--peer", help="Remote station endpoint (e.g. http://127.0.0.1:24243)")
+    p_sync.add_argument("--watch", action="store_true", help="Keep connection open and watch for incoming real-time events")
+
+    # watch
+    p_watch = subparsers.add_parser("watch", help="Listen to real-time P2P SSE event stream")
+    p_watch.add_argument("--auto-sync", action="store_true", help="Automatically trigger sync on incoming change events")
+    p_watch.add_argument("--peer", help="Peer endpoint to sync with when events arrive")
 
     # spec
     p_spec = subparsers.add_parser("spec", help="Read generated specification or plan for an idea")
@@ -1480,6 +1536,8 @@ def main() -> None:
         cmd_scaffold(args)
     elif args.subcommand == "sync":
         cmd_sync(args)
+    elif args.subcommand == "watch":
+        cmd_watch(args)
     elif args.subcommand == "spec":
         cmd_spec(args)
     elif args.subcommand == "import-repo":
