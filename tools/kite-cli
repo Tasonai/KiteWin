@@ -1339,6 +1339,132 @@ def cmd_diff_canvas(args: argparse.Namespace) -> None:
         res = api_post(ep, "/api/canvas", canvas)
         print(f"[+] Successfully charted {new_count} missing code modules onto live Canvas ({res.get('status', 'ok')}).")
 
+def generate_antigravity_skill(idea: Dict[str, Any], canvas: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    title = idea.get("title", "Kite Architecture")
+    concept = idea.get("description") or idea.get("concept") or "Enterprise system architecture and design system."
+    platform = (idea.get("platform") or "web").lower()
+    style = idea.get("preferredStyle") or "Editorial & Swiss Modern"
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", title.lower()).strip("-")
+    if not slug:
+        slug = "kite-project"
+    skill_name = f"{slug}-architect"
+
+    frames = canvas.get("frames", []) if canvas else []
+    stickies = canvas.get("stickies", []) if canvas else []
+
+    directives = [s.get("text", "") for s in stickies if s.get("text")]
+    boundaries = [f.get("title", "") for f in frames if f.get("title")]
+
+    dir_bullets = "\n".join(f"- {d}" for d in directives[:8]) if directives else "- Enforce strict contract boundaries between UI, domain services, and persistence layers."
+    bound_bullets = "\n".join(f"- {b}" for b in boundaries[:6]) if boundaries else "- UI Presentation Layer\n- Domain Services & Network\n- Data Persistence & State"
+
+    content = f"""---
+name: {skill_name}
+description: Architectural directives, design contracts, and validation rules for {title} ({platform.capitalize()}). Use when implementing or reviewing {title} components and services.
+---
+
+# {title} Architecture & Quality Standard
+
+## Mission
+You are the lead systems architect and craftsmanship guardian for **{title}**.
+Your role is to enforce architecture contracts, data integrity, layout precision, and quality gates when designing, generating, or modifying code for this project.
+
+## Context & Objectives
+- **Target Platform:** {platform.capitalize()}
+- **Design Philosophy:** {style}
+- **Concept:** {concept}
+
+## Architectural Boundaries (Kite Topology Canvas)
+{bound_bullets}
+
+## Directives & Execution Invariants
+{dir_bullets}
+
+## Craftsmanship & UI Canons
+1. **Layout Grid:** Strict 4pt (Apple HIG / macOS) and 4 epx (Windows 11 BAWA) baseline grid. Spacing values must strictly be multiples of 4 (e.g. 4, 8, 16, 24, 32).
+2. **Typography & Contrast:** High contrast typography with zero muddy gray washouts. Surface cards must sit on distinct background tones.
+3. **Responsive Flow:** Minimum touch/click target dimension is 44px x 44px. Smooth 120ms transitions on state changes.
+4. **Zero Emojis Policy:** Decorative emojis are strictly prohibited in code, user interfaces, logs, and commit messages. Use native system icons and glyphs (SF Symbols on Apple, Segoe Fluent Icons on Windows).
+
+## Verification Checklist
+- [ ] Data layer mutations use transactions or WAL (Write-Ahead Logging).
+- [ ] API endpoints enforce rate limiting and input schema validation.
+- [ ] UI layouts pass accessibility tests (WCAG 2.2 AA compliant, visible focus states).
+- [ ] All components preserve atomic state and recover gracefully from network disconnection.
+"""
+
+    return {
+        "skill_name": skill_name,
+        "content": content
+    }
+
+def cmd_skill_gen(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    data = api_get(ep, "/api/ideas")
+    ideas = data.get("ideas", [])
+    canvas = api_get(ep, "/api/canvas")
+
+    target_query = getattr(args, "query", None)
+    matched = None
+    if target_query:
+        tq = target_query.lower()
+        matched = next((i for i in ideas if tq in i.get("title", "").lower() or tq in i.get("id", "").lower()), None)
+        if not matched:
+            print(f"Error: Idea matching '{target_query}' not found.")
+            sys.exit(1)
+    else:
+        matched = next((i for i in ideas if i.get("isStarred")), ideas[0] if ideas else None)
+
+    if not matched:
+        matched = {
+            "title": "Kite Workspace Architecture",
+            "concept": "Integrated cross-platform architecture and synchronization engine.",
+            "platform": "desktop",
+            "preferredStyle": "Editorial & Swiss Modern"
+        }
+
+    skill = generate_antigravity_skill(matched, canvas)
+    skill_name = skill["skill_name"]
+    content = skill["content"]
+
+    install_flag = getattr(args, "install", False)
+    out_path = getattr(args, "out", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    print("=== Kite Antigravity Skill Synthesizer ===")
+    print(f"Project:     {matched.get('title')}")
+    print(f"Skill Name:  {skill_name}")
+    print(f"Platform:    {matched.get('platform', 'web')}")
+
+    if install_flag:
+        home = os.path.expanduser("~")
+        dest_dir = os.path.join(home, ".gemini", "config", "skills", skill_name)
+        file_path = os.path.join(dest_dir, "SKILL.md")
+        print(f"Destination: {file_path}")
+        if dry_run:
+            print("Mode:        DRY RUN (preview only, no file written)\n")
+        else:
+            os.makedirs(dest_dir, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"\n[+] Skill successfully installed to Antigravity skills catalog:")
+            print(f"    {file_path}")
+    elif out_path:
+        file_path = os.path.abspath(out_path)
+        print(f"Destination: {file_path}")
+        if dry_run:
+            print("Mode:        DRY RUN (preview only, no file written)\n")
+        else:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"\n[+] Skill written to {file_path}")
+    else:
+        print("\n--- SKILL.md PREVIEW ---")
+        print(content)
+        print("--- END SKILL.md ---")
+        print(f"\nTip: Run with --install to deploy directly to Antigravity catalog (~/.gemini/config/skills/{skill_name}/SKILL.md)")
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -1713,6 +1839,17 @@ def run_mcp_server() -> None:
                                         "apply": {"type": "boolean", "description": "Automatically sync uncharted modules to Canvas", "default": False}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_generate_skill",
+                                "description": "Synthesizes an Antigravity SKILL.md from project architecture and canvas directives.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string", "description": "Title or query of idea to base skill on"},
+                                        "install": {"type": "boolean", "description": "Install directly to ~/.gemini/config/skills/", "default": False}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -2058,6 +2195,48 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_generate_skill":
+                    q = args.get("title", "")
+                    install_flag = args.get("install", False)
+                    canvas = api_get(ep, "/api/canvas")
+                    ideas = api_get(ep, "/api/ideas").get("ideas", [])
+                    matched = None
+                    if q:
+                        matched = next((i for i in ideas if q.lower() in i.get("title", "").lower() or q.lower() in i.get("id", "").lower()), None)
+                    else:
+                        matched = next((i for i in ideas if i.get("isStarred")), ideas[0] if ideas else None)
+
+                    if not matched:
+                        matched = {
+                            "title": "Kite Architecture",
+                            "concept": "Integrated system architecture and synchronization engine.",
+                            "platform": "desktop",
+                            "preferredStyle": "Editorial & Swiss Modern"
+                        }
+
+                    res_skill = generate_antigravity_skill(matched, canvas)
+                    skill_name = res_skill["skill_name"]
+                    skill_md = res_skill["content"]
+
+                    if install_flag:
+                        home = os.path.expanduser("~")
+                        dest_dir = os.path.join(home, ".gemini", "config", "skills", skill_name)
+                        file_path = os.path.join(dest_dir, "SKILL.md")
+                        os.makedirs(dest_dir, exist_ok=True)
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            f.write(skill_md)
+                        out_text = f"Skill successfully installed to {file_path} (name: {skill_name})."
+                    else:
+                        out_text = f"Synthesized Skill: {skill_name}\n\n```markdown\n{skill_md}\n```"
+
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": out_text}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -2347,6 +2526,13 @@ def main() -> None:
     p_diff.add_argument("path", nargs="?", default=".", help="Repository path to analyze (default: .)")
     p_diff.add_argument("--apply", action="store_true", help="Sync uncharted modules directly to Canvas")
 
+    # skill-gen
+    p_skill = subparsers.add_parser("skill-gen", help="Synthesize Antigravity SKILL.md from architecture directives")
+    p_skill.add_argument("query", nargs="?", default="", help="Idea title or substring to base skill on")
+    p_skill.add_argument("--install", action="store_true", help="Install directly to ~/.gemini/config/skills/")
+    p_skill.add_argument("--out", help="Custom output path for SKILL.md")
+    p_skill.add_argument("--dry-run", action="store_true", help="Preview skill without writing file")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -2393,6 +2579,8 @@ def main() -> None:
         cmd_synthesize(args)
     elif args.subcommand == "diff-canvas":
         cmd_diff_canvas(args)
+    elif args.subcommand == "skill-gen":
+        cmd_skill_gen(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
