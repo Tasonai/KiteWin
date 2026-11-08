@@ -1,5 +1,6 @@
 using KiteWin.Core;
 using KiteWin.Core.Services;
+using KiteWin.UI.Dialogs;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -253,6 +254,34 @@ public sealed partial class ItemsPage : Page
         package.SetText(diag);
         Clipboard.SetContent(package);
         ShowBanner("Схема Mermaid для FigJam скопирована в буфер обмена.", InfoBarSeverity.Success);
+    }
+
+    private async void OnOpenAntigravityPack(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var dialog = new AntigravityPackDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnOpenModelRouter(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var dialog = new ModelRouterDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnOpenDataSchema(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var dialog = new DataSchemaDialog(XamlRoot, item);
+        await dialog.ShowAsync();
+    }
+
+    private async void OnOpenApiContract(object sender, RoutedEventArgs e)
+    {
+        if (Model.Selection is not { } item) return;
+        var dialog = new ApiContractDialog(XamlRoot, item);
+        await dialog.ShowAsync();
     }
 
     private void ShowBanner(string text, InfoBarSeverity severity)
