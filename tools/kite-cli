@@ -4302,6 +4302,281 @@ def cmd_export_project(args: argparse.Namespace) -> None:
     else:
         print(format_export_project_report(res, use_ansi=sys.stdout.isatty()))
 
+# ==================== ARCHITECTURE REPLAY & TIME-TRAVEL ENGINE ====================
+
+def compute_canvas_hash(canvas: Dict[str, Any]) -> str:
+    frames = sorted([f.get("title", "") for f in canvas.get("frames", [])])
+    stickies = sorted([s.get("text", "") for s in canvas.get("stickies", [])])
+    conn_list = []
+    for c in canvas.get("connections", []):
+        fid = c.get("fromId", "")
+        tid = c.get("toId", "")
+        lbl = c.get("label", "")
+        conn_list.append(f"{fid}->{tid}:{lbl}")
+    conns = sorted(conn_list)
+    payload = json.dumps({"frames": frames, "stickies": stickies, "conns": conns}, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+def get_replay_history_file() -> str:
+    history_dir = os.path.expanduser("~/.kite")
+    os.makedirs(history_dir, exist_ok=True)
+    return os.path.join(history_dir, "history.jsonl")
+
+def load_replay_history() -> List[Dict[str, Any]]:
+    path = get_replay_history_file()
+    if not os.path.isfile(path):
+        return []
+    records = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except Exception:
+                    pass
+    return records
+
+def record_replay_checkpoint(canvas: Dict[str, Any], message: str) -> Dict[str, Any]:
+    history = load_replay_history()
+    idx = len(history) + 1
+    h = compute_canvas_hash(canvas)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rec = {
+        "index": idx,
+        "id": f"rev-{idx:03d}",
+        "timestamp": now_iso,
+        "hash": h,
+        "message": message or f"Checkpoint #{idx}",
+        "frames_count": len(canvas.get("frames", [])),
+        "stickies_count": len(canvas.get("stickies", [])),
+        "connections_count": len(canvas.get("connections", [])),
+        "state": {
+            "frames": canvas.get("frames", []),
+            "stickies": canvas.get("stickies", []),
+            "connections": canvas.get("connections", []),
+            "referenceCards": canvas.get("referenceCards", [])
+        }
+    }
+    path = get_replay_history_file()
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return rec
+
+def compute_replay_diff(state_a: Dict[str, Any], state_b: Dict[str, Any]) -> Dict[str, Any]:
+    titles_a = {f.get("title", "") for f in state_a.get("frames", []) if f.get("title")}
+    titles_b = {f.get("title", "") for f in state_b.get("frames", []) if f.get("title")}
+    frames_added = sorted(list(titles_b - titles_a))
+    frames_removed = sorted(list(titles_a - titles_b))
+
+    stickies_a = {s.get("text", "") for s in state_a.get("stickies", []) if s.get("text")}
+    stickies_b = {s.get("text", "") for s in state_b.get("stickies", []) if s.get("text")}
+    stickies_added = sorted(list(stickies_b - stickies_a))
+    stickies_removed = sorted(list(stickies_a - stickies_b))
+
+    conns_a = {f"{c.get('fromId','')}->{c.get('toId','')}:{c.get('label','')}" for c in state_a.get("connections", [])}
+    conns_b = {f"{c.get('fromId','')}->{c.get('toId','')}:{c.get('label','')}" for c in state_b.get("connections", [])}
+    conns_added = sorted(list(conns_b - conns_a))
+    conns_removed = sorted(list(conns_a - conns_b))
+
+    return {
+        "frames_added": frames_added,
+        "frames_removed": frames_removed,
+        "stickies_added": stickies_added,
+        "stickies_removed": stickies_removed,
+        "conns_added": conns_added,
+        "conns_removed": conns_removed,
+        "has_changes": bool(frames_added or frames_removed or stickies_added or stickies_removed or conns_added or conns_removed)
+    }
+
+def format_replay_list(history: List[Dict[str, Any]], current_hash: str, use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_YELLOW = "\033[1;33m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE DETERMINISTIC ARCHITECTURE REPLAY TIMELINE ==={C_RESET}")
+    lines.append("-" * 76)
+    lines.append(f"{'STEP':<6} {'REV ID':<9} {'HASH':<14} {'COMPONENTS':<20} {'MESSAGE'}")
+    lines.append("-" * 76)
+    for rec in history:
+        is_current = (rec.get("hash") == current_hash)
+        cur_marker = f"{C_GREEN}* {C_RESET}" if is_current else "  "
+        step_str = f"{cur_marker}{rec.get('index', 0):<4}"
+        rev_id = rec.get("id", "")
+        h = rec.get("hash", "")
+        comps = f"{rec.get('frames_count',0)}F / {rec.get('stickies_count',0)}S / {rec.get('connections_count',0)}C"
+        msg = rec.get("message", "")
+        lines.append(f"{step_str} {rev_id:<9} {h:<14} {comps:<20} {msg}")
+    lines.append("-" * 76)
+    lines.append(f"Total Checkpoints: {C_BOLD}{len(history)}{C_RESET} | Active Head: {C_YELLOW}{current_hash}{C_RESET}")
+    return "\n".join(lines)
+
+def format_replay_diff_report(diff: Dict[str, Any], from_desc: str, to_desc: str, use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+    C_RED = "\033[1;31m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE ARCHITECTURE REPLAY STRUCTURAL DIFF ==={C_RESET}")
+    lines.append(f"From: {from_desc}")
+    lines.append(f"To:   {to_desc}")
+    lines.append("-" * 76)
+    if not diff.get("has_changes"):
+        lines.append(f"{C_GREEN}[No architectural drift detected between states]{C_RESET}")
+        return "\n".join(lines)
+
+    if diff.get("frames_added"):
+        lines.append(f"{C_GREEN}[+] Added Frames ({len(diff['frames_added'])}):{C_RESET}")
+        for item in diff["frames_added"]:
+            lines.append(f"    + {item}")
+    if diff.get("frames_removed"):
+        lines.append(f"{C_RED}[-] Removed Frames ({len(diff['frames_removed'])}):{C_RESET}")
+        for item in diff["frames_removed"]:
+            lines.append(f"    - {item}")
+    if diff.get("stickies_added"):
+        lines.append(f"{C_GREEN}[+] Added Stickies ({len(diff['stickies_added'])}):{C_RESET}")
+        for item in diff["stickies_added"]:
+            lines.append(f"    + {item}")
+    if diff.get("stickies_removed"):
+        lines.append(f"{C_RED}[-] Removed Stickies ({len(diff['stickies_removed'])}):{C_RESET}")
+        for item in diff["stickies_removed"]:
+            lines.append(f"    - {item}")
+    if diff.get("conns_added"):
+        lines.append(f"{C_GREEN}[+] Added Connections ({len(diff['conns_added'])}):{C_RESET}")
+        for item in diff["conns_added"]:
+            lines.append(f"    + {item}")
+    if diff.get("conns_removed"):
+        lines.append(f"{C_RED}[-] Removed Connections ({len(diff['conns_removed'])}):{C_RESET}")
+        for item in diff["conns_removed"]:
+            lines.append(f"    - {item}")
+    lines.append("-" * 76)
+    return "\n".join(lines)
+
+def format_replay_step_evolution(history: List[Dict[str, Any]], use_ansi: bool = True) -> str:
+    C_RESET = "\033[0m" if use_ansi else ""
+    C_BOLD = "\033[1m" if use_ansi else ""
+    C_CYAN = "\033[1;36m" if use_ansi else ""
+    C_GREEN = "\033[1;32m" if use_ansi else ""
+
+    lines = []
+    lines.append(f"{C_CYAN}=== KITE ARCHITECTURE STEPWISE EVOLUTION ==={C_RESET}")
+    lines.append("-" * 76)
+    for i in range(len(history)):
+        rec = history[i]
+        idx = rec.get("index", i + 1)
+        h = rec.get("hash", "")
+        msg = rec.get("message", "")
+        ts = rec.get("timestamp", "")
+        if i == 0:
+            lines.append(f"Step {idx}/{len(history)} [{h}] ({ts})")
+            lines.append(f"  Initial Baseline: {rec.get('frames_count')} frames, {rec.get('stickies_count')} stickies, {rec.get('connections_count')} connectors")
+            lines.append(f"  Note: {msg}")
+        else:
+            prev_rec = history[i - 1]
+            diff = compute_replay_diff(prev_rec.get("state", {}), rec.get("state", {}))
+            delta_f = len(diff.get("frames_added", [])) - len(diff.get("frames_removed", []))
+            delta_s = len(diff.get("stickies_added", [])) - len(diff.get("stickies_removed", []))
+            delta_c = len(diff.get("conns_added", [])) - len(diff.get("conns_removed", []))
+            delta_summary = f"{delta_f:+d}F, {delta_s:+d}S, {delta_c:+d}C"
+            lines.append(f"Step {idx}/{len(history)} [{h}] ({ts}) -> Delta: {C_GREEN}{delta_summary}{C_RESET}")
+            lines.append(f"  Mutation: {msg}")
+            if diff.get("frames_added"):
+                lines.append(f"    + Frame: {', '.join(diff['frames_added'])}")
+            if diff.get("conns_added"):
+                lines.append(f"    + Connectors: {len(diff['conns_added'])} added")
+        lines.append("  |")
+    lines.append(f"{C_BOLD}[HEAD] Evolution complete across {len(history)} deterministic checkpoints.{C_RESET}")
+    return "\n".join(lines)
+
+def cmd_replay(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    canvas = api_get(ep, "/api/canvas")
+    cur_hash = compute_canvas_hash(canvas)
+    history = load_replay_history()
+
+    # Seed baseline if history is empty
+    if not history:
+        baseline = record_replay_checkpoint(canvas, "Initial architecture baseline")
+        history = [baseline]
+
+    record_msg = getattr(args, "record", None)
+    if record_msg is not None:
+        msg = record_msg.strip() or "Architecture mutation checkpoint"
+        new_rec = record_replay_checkpoint(canvas, msg)
+        if getattr(args, "json", False):
+            print(json.dumps(new_rec, indent=2, ensure_ascii=False))
+        else:
+            print(f"Recorded architecture checkpoint #{new_rec['index']} ({new_rec['hash']}): {msg}")
+        return
+
+    rollback_target = getattr(args, "rollback", None)
+    if rollback_target:
+        matched = None
+        for r in history:
+            if str(r.get("index")) == rollback_target or r.get("id") == rollback_target or r.get("hash", "").startswith(rollback_target):
+                matched = r
+                break
+        if not matched:
+            print(f"Error: Checkpoint '{rollback_target}' not found in history.")
+            sys.exit(1)
+
+        payload = {
+            "replace": True,
+            "frames": matched["state"].get("frames", []),
+            "stickies": matched["state"].get("stickies", []),
+            "connections": matched["state"].get("connections", []),
+            "referenceCards": matched["state"].get("referenceCards", [])
+        }
+        res = api_post(ep, "/api/canvas", payload)
+        record_replay_checkpoint(matched["state"], f"Rollback to checkpoint #{matched['index']} ({matched['hash']})")
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "ok", "restored_checkpoint": matched["index"], "hash": matched["hash"]}, indent=2))
+        else:
+            print(f"Successfully rolled back live canvas to checkpoint #{matched['index']} [{matched['hash']}]: {matched['message']}")
+            print(f"Live Station: {ep} updated with {matched['frames_count']} frames, {matched['stickies_count']} stickies, {matched['connections_count']} connectors.")
+        return
+
+    diff_target = getattr(args, "diff", None)
+    if diff_target is not None:
+        matched = None
+        if diff_target:
+            for r in history:
+                if str(r.get("index")) == diff_target or r.get("id") == diff_target or r.get("hash", "").startswith(diff_target):
+                    matched = r
+                    break
+            if not matched:
+                print(f"Error: Checkpoint '{diff_target}' not found.")
+                sys.exit(1)
+        else:
+            matched = history[-1]
+
+        diff = compute_replay_diff(matched.get("state", {}), canvas)
+        if getattr(args, "json", False):
+            print(json.dumps(diff, indent=2, ensure_ascii=False))
+        else:
+            from_desc = f"Checkpoint #{matched['index']} ({matched['hash']})"
+            to_desc = f"Live Canvas ({cur_hash})"
+            print(format_replay_diff_report(diff, from_desc, to_desc, use_ansi=sys.stdout.isatty()))
+        return
+
+    if getattr(args, "step", False):
+        if getattr(args, "json", False):
+            print(json.dumps(history, indent=2, ensure_ascii=False))
+        else:
+            print(format_replay_step_evolution(history, use_ansi=sys.stdout.isatty()))
+        return
+
+    # Default: list history
+    if getattr(args, "json", False):
+        print(json.dumps({"current_hash": cur_hash, "history": history}, indent=2, ensure_ascii=False))
+    else:
+        print(format_replay_list(history, cur_hash, use_ansi=sys.stdout.isatty()))
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -4883,6 +5158,22 @@ def run_mcp_server() -> None:
                                         "query": {"type": "string", "description": "Idea title or search query"},
                                         "out": {"type": "string", "description": "Target project directory path"},
                                         "dry_run": {"type": "boolean", "description": "Preview generated file paths without writing to disk"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_replay",
+                                "description": "Deterministic time-travel debugger, mutation history journal, and atomic rollback engine for architecture canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "action": {
+                                            "type": "string",
+                                            "enum": ["list", "record", "diff", "step", "rollback"],
+                                            "description": "Replay action: list history (default), record new checkpoint, diff against checkpoint, step evolution, or rollback"
+                                        },
+                                        "target": {"type": "string", "description": "Target checkpoint index (e.g. 1) or hash prefix for diff/rollback"},
+                                        "message": {"type": "string", "description": "Checkpoint message when recording"}
                                     }
                                 }
                             }
@@ -5580,6 +5871,72 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_replay":
+                    action = args.get("action", "list")
+                    target = args.get("target")
+                    msg = args.get("message")
+                    canvas = api_get(ep, "/api/canvas")
+                    cur_hash = compute_canvas_hash(canvas)
+                    history = load_replay_history()
+                    if not history:
+                        baseline = record_replay_checkpoint(canvas, "Initial architecture baseline")
+                        history = [baseline]
+
+                    if action == "record":
+                        rec_msg = msg or "Architecture mutation checkpoint"
+                        new_rec = record_replay_checkpoint(canvas, rec_msg)
+                        out_text = f"Recorded architecture checkpoint #{new_rec['index']} ({new_rec['hash']}): {rec_msg}"
+                    elif action == "rollback":
+                        if not target:
+                            out_text = "Error: target checkpoint index or hash is required for rollback."
+                        else:
+                            matched = None
+                            for r in history:
+                                if str(r.get("index")) == target or r.get("id") == target or r.get("hash", "").startswith(target):
+                                    matched = r
+                                    break
+                            if not matched:
+                                out_text = f"Error: Checkpoint '{target}' not found in history."
+                            else:
+                                payload = {
+                                    "replace": True,
+                                    "frames": matched["state"].get("frames", []),
+                                    "stickies": matched["state"].get("stickies", []),
+                                    "connections": matched["state"].get("connections", []),
+                                    "referenceCards": matched["state"].get("referenceCards", [])
+                                }
+                                api_post(ep, "/api/canvas", payload)
+                                record_replay_checkpoint(matched["state"], f"Rollback to checkpoint #{matched['index']} ({matched['hash']})")
+                                out_text = f"Successfully rolled back live canvas to checkpoint #{matched['index']} [{matched['hash']}]: {matched['message']}"
+                    elif action == "diff":
+                        matched = None
+                        if target:
+                            for r in history:
+                                if str(r.get("index")) == target or r.get("id") == target or r.get("hash", "").startswith(target):
+                                    matched = r
+                                    break
+                        else:
+                            matched = history[-1]
+                        if not matched:
+                            out_text = f"Error: Checkpoint '{target}' not found."
+                        else:
+                            diff = compute_replay_diff(matched.get("state", {}), canvas)
+                            from_desc = f"Checkpoint #{matched['index']} ({matched['hash']})"
+                            to_desc = f"Live Canvas ({cur_hash})"
+                            out_text = format_replay_diff_report(diff, from_desc, to_desc, use_ansi=False)
+                    elif action == "step":
+                        out_text = format_replay_step_evolution(history, use_ansi=False)
+                    else:
+                        out_text = format_replay_list(history, cur_hash, use_ansi=False)
+
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": out_text}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -5963,6 +6320,14 @@ def main() -> None:
     p_export.add_argument("--dry-run", action="store_true", help="Preview generated file paths without writing to disk")
     p_export.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # replay
+    p_replay = subparsers.add_parser("replay", help="Deterministic architecture replay, time-travel history, and rollback")
+    p_replay.add_argument("--record", nargs="?", const="", help="Record current canvas state as a new checkpoint with optional message")
+    p_replay.add_argument("--rollback", help="Target checkpoint index (e.g. 1) or hash to restore")
+    p_replay.add_argument("--diff", nargs="?", const="", help="Diff current canvas against checkpoint index or hash")
+    p_replay.add_argument("--step", action="store_true", help="Display stepwise evolutionary timeline of architecture mutations")
+    p_replay.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -6039,6 +6404,8 @@ def main() -> None:
         cmd_prd(args)
     elif args.subcommand == "export-project":
         cmd_export_project(args)
+    elif args.subcommand == "replay":
+        cmd_replay(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
