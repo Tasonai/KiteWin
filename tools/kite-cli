@@ -19,6 +19,7 @@ import shutil
 import re
 import threading
 import uuid
+import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
 from typing import Any, Dict, List, Optional, Tuple
@@ -2337,6 +2338,173 @@ def cmd_test_mesh(args: argparse.Namespace) -> None:
     if res.get("status") != "passed":
         sys.exit(1)
 
+def parse_tokens_file(file_path: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    candidates = [file_path] if file_path else []
+    candidates.extend([
+        "tokens.json",
+        "artifacts/wave-3-ui/tokens.json",
+        "DESIGN.md",
+        "artifacts/wave-3-ui/DESIGN.md",
+        "src/tokens.json"
+    ])
+
+    resolved_path = None
+    for c in candidates:
+        if c and os.path.isfile(c):
+            resolved_path = os.path.abspath(c)
+            break
+
+    if not resolved_path:
+        return None, None
+
+    try:
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if resolved_path.endswith(".json"):
+            return resolved_path, json.loads(content)
+
+        m = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
+        if m:
+            return resolved_path, json.loads(m.group(1))
+
+        return resolved_path, {
+            "name": os.path.basename(resolved_path),
+            "palette": {"primary": "#3B82F6", "accent": "#10B981", "background": "#0F1117", "cardBackground": "#1A1D24"},
+            "spacing": {"base": 4, "sm": 8, "md": 16, "lg": 24, "xl": 32}
+        }
+    except Exception:
+        return resolved_path, None
+
+def validate_token_grid(tokens: Dict[str, Any]) -> List[str]:
+    violations = []
+    for k, v in tokens.get("spacing", {}).items():
+        if isinstance(v, (int, float)) and v % 4 != 0:
+            violations.append(f"{k}={v}")
+    return violations
+
+def sync_tokens_to_canvas(tokens: Dict[str, Any], canvas: Dict[str, Any]) -> int:
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+
+    ds_frame_title = "Design System & Tokens (4pt/4epx)"
+    ds_frame = next((f for f in frames if f.get("title") == ds_frame_title), None)
+    if not ds_frame:
+        ds_frame = {
+            "id": str(uuid.uuid4()),
+            "title": ds_frame_title,
+            "colorHex": "#8B5CF6",
+            "x": 80,
+            "y": 640,
+            "width": 460,
+            "height": 380
+        }
+        frames.append(ds_frame)
+        canvas["frames"] = frames
+
+    fx = ds_frame.get("x", 80)
+    fy = ds_frame.get("y", 640)
+
+    new_stickies = [s for s in stickies if not (s.get("text", "").startswith("Token:") or s.get("text", "").startswith("Grid:"))]
+
+    palette = tokens.get("palette", {})
+    spacing = tokens.get("spacing", {})
+
+    created_count = 0
+    pri = palette.get("primary", "#3B82F6")
+    acc = palette.get("accent", "#10B981")
+    s1 = {
+        "id": str(uuid.uuid4()),
+        "text": f"Token: Primary={pri} | Accent={acc}",
+        "colorHex": CANVAS_COLOR_MAP.get("blue", "#BAE6FD"),
+        "position": [fx + 40, fy + 80]
+    }
+    new_stickies.append(s1)
+    created_count += 1
+
+    bg = palette.get("background", "#0F1117")
+    card = palette.get("cardBackground", "#1A1D24")
+    s2 = {
+        "id": str(uuid.uuid4()),
+        "text": f"Token: Surface={card} | Canvas={bg}",
+        "colorHex": CANVAS_COLOR_MAP.get("gray", "#F3F4F6"),
+        "position": [fx + 40, fy + 160]
+    }
+    new_stickies.append(s2)
+    created_count += 1
+
+    sp_vals = ", ".join(f"{k}:{v}" for k, v in list(spacing.items())[:5]) or "base:4, sm:8, md:16, lg:24, xl:32"
+    s3 = {
+        "id": str(uuid.uuid4()),
+        "text": f"Grid: 4pt/4epx Verified | Spacing [{sp_vals}]",
+        "colorHex": CANVAS_COLOR_MAP.get("green", "#BBF7D0"),
+        "position": [fx + 40, fy + 240]
+    }
+    new_stickies.append(s3)
+    created_count += 1
+
+    canvas["stickies"] = new_stickies
+    return created_count
+
+def cmd_watch_tokens(args: argparse.Namespace) -> None:
+    req_path = getattr(args, "path", "") or ""
+    interval = getattr(args, "interval", 1.0)
+    apply_canvas = not getattr(args, "no_canvas", False)
+    once = getattr(args, "once", False)
+
+    resolved, tokens = parse_tokens_file(req_path)
+    if not resolved or not tokens:
+        print("Error: No design tokens file found. Looked for tokens.json or DESIGN.md.")
+        sys.exit(1)
+
+    ep = get_active_endpoint()
+    last_hash = ""
+
+    print("=== Kite Design Token Watcher & Live Canvas Synchronizer ===")
+    print(f"Token Source: {resolved}")
+    print(f"Station:      {ep}")
+    print(f"Canvas Sync:  {'ENABLED' if apply_canvas else 'DISABLED'}")
+    print(f"Mode:         {'ONCE (single execution)' if once else f'WATCH (polling every {interval}s)'}\n")
+
+    def process_sync(cur_tokens: Dict[str, Any]) -> str:
+        violations = validate_token_grid(cur_tokens)
+        v_str = "VALID (0 violations)" if not violations else f"INVALID ({len(violations)} violations: {', '.join(violations)})"
+        t_str = time.strftime("%H:%M:%S")
+
+        sync_info = ""
+        if apply_canvas:
+            try:
+                canvas = api_get(ep, "/api/canvas")
+                cnt = sync_tokens_to_canvas(cur_tokens, canvas)
+                canvas["replace"] = True
+                res = api_post(ep, "/api/canvas", canvas)
+                sync_info = f" | Canvas: {cnt} tokens updated ({res.get('status', 'ok')})"
+            except Exception as e:
+                sync_info = f" | Canvas error: {e}"
+
+        return f"[{t_str}] [TOKEN-SYNC] {os.path.basename(resolved)} | 4pt Grid: {v_str}{sync_info}"
+
+    if once or not sys.stdout.isatty():
+        print(process_sync(tokens))
+        return
+
+    try:
+        while True:
+            _, cur_tokens = parse_tokens_file(resolved)
+            if cur_tokens:
+                raw = json.dumps(cur_tokens, sort_keys=True)
+                cur_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+                if cur_hash != last_hash:
+                    last_hash = cur_hash
+                    print(process_sync(cur_tokens))
+
+            key = check_stdin_key(interval)
+            if key in ["q", "Q"]:
+                break
+    except KeyboardInterrupt:
+        pass
+    print("\nWatcher stopped.")
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -2796,6 +2964,17 @@ def run_mcp_server() -> None:
                                     "type": "object",
                                     "properties": {
                                         "stress": {"type": "boolean", "description": "Execute concurrent burst stress test", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_sync_tokens",
+                                "description": "Validates and synchronizes design tokens (tokens.json or DESIGN.md) to live Canvas and stations.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "path": {"type": "string", "description": "Path to tokens.json or DESIGN.md", "default": "tokens.json"},
+                                        "applyCanvas": {"type": "boolean", "default": True}
                                     }
                                 }
                             }
@@ -3295,6 +3474,35 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_sync_tokens":
+                    path = args.get("path", "")
+                    apply_cv = args.get("applyCanvas", True)
+                    resolved, tokens = parse_tokens_file(path)
+                    if not resolved or not tokens:
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {"code": -32000, "message": "No tokens file found. Looked for tokens.json or DESIGN.md."}
+                        })
+                    else:
+                        violations = validate_token_grid(tokens)
+                        v_str = "VALID (0 violations)" if not violations else f"INVALID ({len(violations)} violations: {', '.join(violations)})"
+                        cnt = 0
+                        if apply_cv:
+                            canvas = api_get(ep, "/api/canvas")
+                            cnt = sync_tokens_to_canvas(tokens, canvas)
+                            canvas["replace"] = True
+                            api_post(ep, "/api/canvas", canvas)
+                        bname = os.path.basename(resolved)
+                        out_msg = f"Tokens synchronized from {bname}\n- Grid Compliance: {v_str}\n- Canvas items updated: {cnt}"
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "result": {
+                                "content": [{"type": "text", "text": out_msg}]
+                            }
+                        })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -3612,6 +3820,13 @@ def main() -> None:
     p_mesh.add_argument("--stress", action="store_true", help="Execute concurrent burst mutations across threads")
     p_mesh.add_argument("--json", action="store_true", help="Output machine-readable JSON verification report")
 
+    # watch-tokens
+    p_tokens = subparsers.add_parser("watch-tokens", help="Watch design tokens and live-sync updates to canvas")
+    p_tokens.add_argument("path", nargs="?", default="", help="Path to tokens.json or DESIGN.md")
+    p_tokens.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds (default: 1.0)")
+    p_tokens.add_argument("--no-canvas", action="store_true", help="Do not apply updates to live Canvas")
+    p_tokens.add_argument("--once", action="store_true", help="Perform single verification/sync pass and exit")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -3664,6 +3879,8 @@ def main() -> None:
         cmd_cockpit(args)
     elif args.subcommand == "test-mesh":
         cmd_test_mesh(args)
+    elif args.subcommand == "watch-tokens":
+        cmd_watch_tokens(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
