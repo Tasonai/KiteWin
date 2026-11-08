@@ -13,6 +13,7 @@ import os
 import json
 import time
 import datetime
+import html
 import urllib.request
 import urllib.error
 import argparse
@@ -2997,6 +2998,162 @@ def cmd_ai_generate(args: argparse.Namespace) -> None:
         print("-" * 72)
         print(res.get("text", ""))
 
+def render_canvas_svg(canvas: Dict[str, Any]) -> str:
+    frames = canvas.get("frames", [])
+    stickies = canvas.get("stickies", [])
+    connections = canvas.get("connections", [])
+
+    min_x = 999999.0
+    min_y = 999999.0
+    max_x = -999999.0
+    max_y = -999999.0
+
+    for f in frames:
+        fx = float(f.get("x", 0))
+        fy = float(f.get("y", 0))
+        fw = float(f.get("width", 360))
+        fh = float(f.get("height", 420))
+        min_x = min(min_x, fx)
+        min_y = min(min_y, fy)
+        max_x = max(max_x, fx + fw)
+        max_y = max(max_y, fy + fh)
+
+    for s in stickies:
+        pos = s.get("position", [0, 0])
+        sx = float(pos[0] if len(pos) > 0 else 0)
+        sy = float(pos[1] if len(pos) > 1 else 0)
+        min_x = min(min_x, sx)
+        min_y = min(min_y, sy)
+        max_x = max(max_x, sx + 220)
+        max_y = max(max_y, sy + 120)
+
+    if min_x > max_x:
+        min_x, min_y, max_x, max_y = 0.0, 0.0, 1000.0, 700.0
+
+    pad = 60.0
+    view_x = min_x - pad
+    view_y = min_y - pad
+    view_w = max_x - min_x + pad * 2
+    view_h = max_y - min_y + pad * 2
+
+    lines = []
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_x} {view_y} {view_w} {view_h}" width="{view_w}" height="{view_h}" style="background-color: #0B0D13; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">')
+    lines.append('  <defs>')
+    lines.append('    <pattern id="dotGrid" width="24" height="24" patternUnits="userSpaceOnUse">')
+    lines.append('      <circle cx="12" cy="12" r="1" fill="#1E293B" />')
+    lines.append('    </pattern>')
+    lines.append('    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">')
+    lines.append('      <path d="M 0 1 L 10 5 L 0 9 z" fill="#60A5FA" />')
+    lines.append('    </marker>')
+    lines.append('  </defs>')
+
+    lines.append(f'  <rect x="{view_x}" y="{view_y}" width="{view_w}" height="{view_h}" fill="url(#dotGrid)" />')
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f'  <text x="{view_x + 24}" y="{view_y + 36}" fill="#64748B" font-size="14" font-weight="600" letter-spacing="0.5">KITE ARCHITECTURE CANVAS &middot; {now_utc}</text>')
+
+    for f in frames:
+        fx = float(f.get("x", 0))
+        fy = float(f.get("y", 0))
+        fw = float(f.get("width", 360))
+        fh = float(f.get("height", 420))
+        title = html.escape(f.get("title", "Frame"))
+        color = f.get("colorHex", "#3B82F6")
+
+        lines.append(f'  <g id="frame-{f.get("id")}">')
+        lines.append(f'    <rect x="{fx}" y="{fy}" width="{fw}" height="{fh}" rx="12" fill="#131720" stroke="{color}" stroke-width="1.5" stroke-opacity="0.6" />')
+        lines.append(f'    <path d="M {fx} {fy + 36} L {fx + fw} {fy + 36}" stroke="{color}" stroke-width="1" stroke-opacity="0.3" />')
+        lines.append(f'    <rect x="{fx + 14}" y="{fy + 12}" width="10" height="10" rx="3" fill="{color}" />')
+        lines.append(f'    <text x="{fx + 32}" y="{fy + 22}" fill="#F8FAFC" font-size="13" font-weight="600">{title}</text>')
+        lines.append('  </g>')
+
+    node_coords: Dict[str, Tuple[float, float]] = {}
+    for f in frames:
+        fx = float(f.get("x", 0))
+        fy = float(f.get("y", 0))
+        fw = float(f.get("width", 360))
+        fh = float(f.get("height", 420))
+        node_coords[f.get("id", "")] = (fx + fw / 2.0, fy + fh / 2.0)
+    for s in stickies:
+        pos = s.get("position", [0, 0])
+        sx = float(pos[0] if len(pos) > 0 else 0)
+        sy = float(pos[1] if len(pos) > 1 else 0)
+        node_coords[s.get("id", "")] = (sx + 100.0, sy + 45.0)
+
+    for c in connections:
+        fid = c.get("fromId", "")
+        tid = c.get("toId", "")
+        if fid in node_coords and tid in node_coords:
+            p1 = node_coords[fid]
+            p2 = node_coords[tid]
+            dx = (p2[0] - p1[0]) * 0.5
+            cx1 = p1[0] + dx
+            cy1 = p1[1]
+            cx2 = p2[0] - dx
+            cy2 = p2[1]
+            mx = (p1[0] + p2[0]) / 2.0
+            my = (p1[1] + p2[1]) / 2.0
+            color = c.get("colorHex", "#60A5FA")
+            lbl = html.escape(c.get("label", ""))
+
+            lines.append(f'  <g id="conn-{c.get("id")}">')
+            lines.append(f'    <path d="M {p1[0]} {p1[1]} C {cx1} {cy1}, {cx2} {cy2}, {p2[0]} {p2[1]}" fill="none" stroke="{color}" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrow)" />')
+            if lbl:
+                badge_w = max(60, len(lbl) * 8 + 16)
+                lines.append(f'    <rect x="{mx - badge_w/2}" y="{my - 11}" width="{badge_w}" height="22" rx="6" fill="#1E293B" stroke="{color}" stroke-width="1" />')
+                lines.append(f'    <text x="{mx}" y="{my + 4}" fill="#F1F5F9" font-size="11" font-weight="600" text-anchor="middle">{lbl}</text>')
+            lines.append('  </g>')
+
+    for s in stickies:
+        pos = s.get("position", [0, 0])
+        sx = float(pos[0] if len(pos) > 0 else 0)
+        sy = float(pos[1] if len(pos) > 1 else 0)
+        sw = 200.0
+        sh = 90.0
+        bg_color = s.get("colorHex", "#FEF08A")
+        text = html.escape(s.get("text", "Sticky"))
+
+        lines.append(f'  <g id="sticky-{s.get("id")}">')
+        lines.append(f'    <rect x="{sx}" y="{sy}" width="{sw}" height="{sh}" rx="8" fill="{bg_color}" stroke="#000000" stroke-opacity="0.15" stroke-width="1" />')
+        lines.append(f'    <text x="{sx + 14}" y="{sy + 26}" fill="#0F172A" font-size="12" font-weight="600">{text[:28]}</text>')
+        if len(text) > 28:
+            lines.append(f'    <text x="{sx + 14}" y="{sy + 46}" fill="#334155" font-size="11">{text[28:56]}</text>')
+        if len(text) > 56:
+            lines.append(f'    <text x="{sx + 14}" y="{sy + 66}" fill="#334155" font-size="11">{text[56:84]}</text>')
+        lines.append('  </g>')
+
+    lines.append('</svg>')
+    return "\n".join(lines)
+
+def cmd_snapshot(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    canvas = api_get(ep, "/api/canvas")
+    out_path = getattr(args, "out", "") or ""
+    to_clipboard = getattr(args, "clipboard", False)
+
+    svg_content = render_canvas_svg(canvas)
+
+    if not out_path:
+        out_path = "canvas-snapshot.svg"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(svg_content)
+
+    print(f"Canvas snapshot saved to {os.path.abspath(out_path)} ({len(svg_content)} bytes)")
+    frames_count = len(canvas.get('frames', []))
+    stickies_count = len(canvas.get('stickies', []))
+    conns_count = len(canvas.get('connections', []))
+    print(f"Rendered: {frames_count} frames, {stickies_count} stickies, {conns_count} connectors.")
+
+    if to_clipboard and sys.platform == "darwin":
+        try:
+            proc = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+            proc.communicate(svg_content.encode("utf-8"))
+            print("Snapshot SVG copied to macOS clipboard.")
+        except Exception:
+            pass
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -3513,6 +3670,17 @@ def run_mcp_server() -> None:
                                         "system": {"type": "string", "description": "System prompt"}
                                     },
                                     "required": ["prompt"]
+                                }
+                            },
+                            {
+                                "name": "kite_snapshot",
+                                "description": "Generates a headless vector SVG visual snapshot of the live Kite Canvas.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "out": {"type": "string", "description": "Output file path (default: canvas-snapshot.svg)"},
+                                        "clipboard": {"type": "boolean", "description": "Copy SVG markup to clipboard", "default": False}
+                                    }
                                 }
                             }
                         ]
@@ -4092,6 +4260,24 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_snapshot":
+                    canvas = api_get(ep, "/api/canvas")
+                    svg_content = render_canvas_svg(canvas)
+                    out_path = args.get("out")
+                    if out_path:
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(svg_content)
+                        text_res = f"Canvas snapshot saved to {os.path.abspath(out_path)} ({len(svg_content)} bytes)"
+                    else:
+                        text_res = svg_content
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": text_res}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -4438,6 +4624,11 @@ def main() -> None:
     p_aigen.add_argument("--system", default="", help="Optional system instruction")
     p_aigen.add_argument("--json", action="store_true", help="Output machine-readable JSON response")
 
+    # snapshot
+    p_snap = subparsers.add_parser("snapshot", help="Generate a headless vector SVG visual snapshot of the live Canvas")
+    p_snap.add_argument("--out", default="canvas-snapshot.svg", help="Output SVG file path (default: canvas-snapshot.svg)")
+    p_snap.add_argument("--clipboard", action="store_true", help="Copy SVG markup to clipboard (macOS)")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -4500,6 +4691,8 @@ def main() -> None:
         cmd_ai_status(args)
     elif args.subcommand == "ai-generate":
         cmd_ai_generate(args)
+    elif args.subcommand == "snapshot":
+        cmd_snapshot(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
