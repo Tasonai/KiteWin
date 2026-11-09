@@ -7,7 +7,7 @@ here=${0:A:h}
 root=${here:h}
 name="Kite"
 app="$HOME/Applications/$name.app"
-version="${1:-1.4.0}"
+version="${1:-1.5.0}"
 rebuild="${2:-false}"
 
 echo "=== 1. Checking macOS Application Bundle ==="

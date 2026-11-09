@@ -6,7 +6,7 @@ import os, sys, re, hashlib, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist")
-VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.4.0"
+VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.5.0"
 
 print(f"=== 1. Building Windows Release Artifacts (v{VERSION}) ===")
 build_script = os.path.join(ROOT, "tools", "build_windows_exe.py")
