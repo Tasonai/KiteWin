@@ -30,6 +30,7 @@ import concurrent.futures
 import statistics
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from collections import deque
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 MAC_ENDPOINT = "http://127.0.0.1:24242"
@@ -7587,6 +7588,242 @@ def cmd_crdt(args: argparse.Namespace) -> None:
         print(format_crdt_report(res, use_ansi=sys.stdout.isatty()))
 
 
+def run_drift_firewall(target_files: Optional[List[str]] = None) -> Dict[str, Any]:
+    rules = [
+        {
+            "name": "PresentationToDataBypass",
+            "sourceLayer": "Presentation",
+            "forbiddenTargets": ["Data", "Persistence", "Storage"],
+            "severity": "error",
+            "description": "Presentation layer cannot import data/storage layers directly without domain service encapsulation."
+        },
+        {
+            "name": "DomainReverseDependency",
+            "sourceLayer": "Domain",
+            "forbiddenTargets": ["Presentation", "UI", "Infrastructure"],
+            "severity": "error",
+            "description": "Domain layer must remain clean and cannot depend on UI or external driver infrastructure."
+        },
+        {
+            "name": "DataReverseDependency",
+            "sourceLayer": "Data",
+            "forbiddenTargets": ["Presentation", "UI"],
+            "severity": "error",
+            "description": "Data layer cannot depend on presentation or UI components."
+        }
+    ]
+
+    def infer_l(p_str: str) -> str:
+        p = p_str.lower().replace("\\", "/")
+        clean = "/" + p.strip("/.") + "/"
+
+        def matches(keywords):
+            return any(f"/{kw}/" in clean or f"/{kw}" in clean or f"{kw}/" in clean or p == kw or f".{kw}" in p for kw in keywords)
+
+        if matches(["views", "pages", "ui", "components", "controllers", "viewmodels"]):
+            return "Presentation"
+        if matches(["domain", "services", "models", "usecases", "core"]):
+            return "Domain"
+        if matches(["data", "repositories", "storage", "persistence", "db", "database"]):
+            return "Data"
+        if matches(["infrastructure", "network", "drivers", "gateways"]):
+            return "Infrastructure"
+        return "Common"
+
+    def extract_imps(content: str, ext: str) -> List[str]:
+        imps = set()
+        for line in content.splitlines():
+            line = line.strip()
+            if ext == ".swift" and line.startswith("import "):
+                parts = line.split()
+                if len(parts) >= 2:
+                    mod = parts[1].strip(";,")
+                    if mod: imps.add(mod)
+            elif ext == ".cs" and line.startswith("using ") and line.endswith(";"):
+                trimmed = line[6:-1].strip()
+                if trimmed and "=" not in trimmed: imps.add(trimmed)
+            elif ext in [".ts", ".tsx", ".js", ".jsx"]:
+                if "from \"" in line or "from '" in line:
+                    for item in re.findall(r"from\s+['\"]([^'\"]+)['\"]", line):
+                        imps.add(item)
+                elif "require(\"" in line or "require('" in line:
+                    for item in re.findall(r"require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)", line):
+                        imps.add(item)
+            elif ext == ".py":
+                if line.startswith("from "):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1]: imps.add(parts[1])
+                elif line.startswith("import "):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mod = parts[1].split(",")[0].strip()
+                        if mod: imps.add(mod)
+        return sorted(list(imps))
+
+    files_to_scan = target_files or []
+    if not files_to_scan:
+        try:
+            res = subprocess.run(["git", "diff", "--name-only", "HEAD~1"], capture_output=True, text=True, check=False)
+            files_to_scan = [f.strip() for f in res.stdout.splitlines() if f.strip()]
+        except Exception:
+            files_to_scan = []
+
+    violations = []
+    supported_exts = {".swift", ".cs", ".ts", ".tsx", ".js", ".jsx", ".py"}
+
+    for fpath in files_to_scan:
+        p = Path(fpath)
+        if not p.is_file() or p.suffix not in supported_exts:
+            continue
+        src_layer = infer_l(fpath)
+        if src_layer == "Common":
+            continue
+        try:
+            txt = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        imports = extract_imps(txt, p.suffix)
+        for imp in imports:
+            tgt_layer = infer_l(imp)
+            if tgt_layer == "Common" or tgt_layer == src_layer:
+                continue
+            for r in rules:
+                if r["sourceLayer"] == src_layer and tgt_layer in r["forbiddenTargets"]:
+                    violations.append({
+                        "id": f"{fpath}->{imp}",
+                        "ruleName": r["name"],
+                        "sourceFile": fpath,
+                        "sourceLayer": src_layer,
+                        "importedModule": imp,
+                        "targetLayer": tgt_layer,
+                        "severity": r["severity"],
+                        "description": r["description"]
+                    })
+
+    return {
+        "status": "fail" if violations else "pass",
+        "auditedFilesCount": len(files_to_scan),
+        "violationsCount": len(violations),
+        "violations": violations
+    }
+
+
+def cmd_lint_pr(args: argparse.Namespace) -> None:
+    res = run_drift_firewall(getattr(args, "files", None))
+    json_out = getattr(args, "json", False)
+
+    if json_out:
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return
+
+    print("=== Kite CI/CD Architectural Drift Firewall ===")
+    print(f"Audited {res['auditedFilesCount']} files.")
+    violations = res.get("violations", [])
+    if violations:
+        print(f"FAIL: Detected {len(violations)} architectural boundary violation(s):")
+        for v in violations:
+            print(f"  [{v['severity'].upper()}] {v['ruleName']}: {v['sourceFile']} ({v['sourceLayer']}) -> {v['importedModule']} ({v['targetLayer']})")
+        if getattr(args, "strict", True):
+            sys.exit(1)
+    else:
+        print("PASS: Clean architecture verified. Zero boundary drift violations.")
+
+
+def cmd_ide(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    active_file = getattr(args, "active_file", None)
+    nav_file = getattr(args, "navigate", None)
+    json_out = getattr(args, "json", False)
+
+    if active_file:
+        res = api_post(ep, "/api/ide/active", {
+            "filePath": active_file,
+            "line": getattr(args, "line", 1),
+            "editor": getattr(args, "editor", "vscode")
+        })
+        if json_out:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"IDE Active File notified: {active_file}:{getattr(args, 'line', 1)}")
+    elif nav_file:
+        res = api_post(ep, "/api/ide/navigate", {
+            "filePath": nav_file,
+            "line": getattr(args, "line", 1),
+            "column": getattr(args, "column", 1),
+            "editor": getattr(args, "editor", "vscode")
+        })
+        if json_out:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"IDE Navigation triggered: {nav_file}:{getattr(args, 'line', 1)}")
+    else:
+        res = api_get(ep, "/api/ide/status")
+        if json_out:
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Kite IDE Bridge Status ===")
+            print(f"Status:          {res.get('status', 'offline').upper()}")
+            print(f"Active File:     {res.get('activeFilePath', '(none)')}")
+            print(f"Active Line:     {res.get('activeLine', 0)}")
+
+
+def cmd_telemetry(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    json_out = getattr(args, "json", False)
+
+    if getattr(args, "simulate", False):
+        canvas = api_get(ep, "/api/canvas")
+        frames = canvas.get("frames", [])
+        updated = []
+        for idx, f in enumerate(frames):
+            fid = f.get("id", f"node-{idx}")
+            rps = 50.0 + (idx * 27.5) % 350.0
+            p99 = 20.0 + (idx * 65.0) % 400.0
+            error_rate = 0.001 if idx % 4 != 0 else 0.025
+            payload = {
+                "nodeId": fid,
+                "rps": round(rps, 1),
+                "p99LatencyMs": round(p99, 1),
+                "errorRate": error_rate
+            }
+            res = api_post(ep, "/api/telemetry", payload)
+            updated.append(res)
+        if json_out:
+            print(json.dumps(updated, indent=2))
+        else:
+            print(f"Simulated live telemetry updated for {len(updated)} canvas nodes.")
+    elif getattr(args, "node_id", None):
+        payload = {
+            "nodeId": args.node_id,
+            "rps": float(getattr(args, "rps", 100.0)),
+            "p99LatencyMs": float(getattr(args, "p99", 45.0)),
+            "errorRate": float(getattr(args, "error_rate", 0.001))
+        }
+        res = api_post(ep, "/api/telemetry", payload)
+        if json_out:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"Node telemetry updated: {args.node_id} (RPS: {payload['rps']}, P99: {payload['p99LatencyMs']}ms, Error: {payload['errorRate']*100:.2f}%)")
+    else:
+        res = api_get(ep, "/api/telemetry")
+        if json_out:
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Live Node Telemetry ===")
+            if not isinstance(res, list) or not res:
+                print("No live telemetry ingested yet.")
+                return
+            print(f"{'STATUS':<10} {'NODE ID':<36} {'RPS':<10} {'P99 LATENCY':<14} {'ERROR RATE'}")
+            print("-" * 80)
+            for t in res:
+                status = t.get("status", "healthy").upper()
+                nid = t.get("nodeId", "")
+                rps = f"{t.get('rps', 0.0):.1f}"
+                p99 = f"{t.get('p99LatencyMs', 0.0):.1f} ms"
+                err = f"{t.get('errorRate', 0.0) * 100:.2f} %"
+                print(f"{status:<10} {nid:<36} {rps:<10} {p99:<14} {err}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -8356,6 +8593,46 @@ def run_mcp_server() -> None:
                                     "properties": {
                                         "clients": {"type": "integer", "description": "Number of simulated concurrent clients (default: 5)", "default": 5},
                                         "iterations": {"type": "integer", "description": "Mutations per client (default: 15)", "default": 15},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_ide_bridge",
+                                "description": "Bidirectional bridge with VS Code and Cursor: query connection status, notify active editor file, or trigger navigation to source lines.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "action": {"type": "string", "enum": ["status", "notify_active", "navigate"], "description": "Bridge action", "default": "status"},
+                                        "filePath": {"type": "string", "description": "Target or active source file path"},
+                                        "line": {"type": "integer", "description": "Line number", "default": 1},
+                                        "column": {"type": "integer", "description": "Column number", "default": 1},
+                                        "editor": {"type": "string", "description": "Editor name (vscode or cursor)", "default": "vscode"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_lint_pr",
+                                "description": "CI/CD Architectural Drift Firewall: audits source code imports and git diffs against layer boundary constraints.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "files": {"type": "array", "items": {"type": "string"}, "description": "Optional list of files to audit"},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_telemetry",
+                                "description": "Ingests or queries live node telemetry (RPS, p99 latency, error rate) and computes SLA health status.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "action": {"type": "string", "enum": ["list", "set", "simulate"], "description": "Telemetry action", "default": "list"},
+                                        "nodeId": {"type": "string", "description": "Canvas node ID for set action"},
+                                        "rps": {"type": "number", "description": "Requests per second"},
+                                        "p99LatencyMs": {"type": "number", "description": "P99 latency in milliseconds"},
+                                        "errorRate": {"type": "number", "description": "Error rate between 0.0 and 1.0"},
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     }
                                 }
@@ -9414,6 +9691,87 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_ide_bridge":
+                    action = args.get("action", "status")
+                    if action == "notify_active":
+                        fpath = args.get("filePath", "")
+                        line = args.get("line", 1)
+                        ed = args.get("editor", "vscode")
+                        res = api_post(ep, "/api/ide/active", {"filePath": fpath, "line": line, "editor": ed})
+                        rendered = f"IDE active file set to {fpath}:{line} ({ed})"
+                    elif action == "navigate":
+                        fpath = args.get("filePath", "")
+                        line = args.get("line", 1)
+                        col = args.get("column", 1)
+                        ed = args.get("editor", "vscode")
+                        res = api_post(ep, "/api/ide/navigate", {"filePath": fpath, "line": line, "column": col, "editor": ed})
+                        rendered = f"Triggered navigation to {fpath}:{line}:{col} in {ed}"
+                    else:
+                        res = api_get(ep, "/api/ide/status")
+                        rendered = json.dumps(res, indent=2)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_lint_pr":
+                    res = run_drift_firewall(args.get("files"))
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        viols = res.get("violations", [])
+                        if viols:
+                            rendered = f"FAIL: Detected {len(viols)} architectural boundary violation(s).\n" + "\n".join(
+                                f"- [{v['severity'].upper()}] {v['ruleName']}: {v['sourceFile']} -> {v['importedModule']}" for v in viols
+                            )
+                        else:
+                            rendered = f"PASS: Clean architecture verified across {res['auditedFilesCount']} files. Zero drift."
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_telemetry":
+                    action = args.get("action", "list")
+                    if action == "set":
+                        nid = args.get("nodeId", "")
+                        payload = {
+                            "nodeId": nid,
+                            "rps": float(args.get("rps", 100.0)),
+                            "p99LatencyMs": float(args.get("p99LatencyMs", 50.0)),
+                            "errorRate": float(args.get("errorRate", 0.001))
+                        }
+                        res = api_post(ep, "/api/telemetry", payload)
+                        rendered = f"Updated telemetry for {nid}: {res.get('status', 'healthy').upper()} (RPS: {payload['rps']}, P99: {payload['p99LatencyMs']}ms)"
+                    elif action == "simulate":
+                        canvas = api_get(ep, "/api/canvas")
+                        frames = canvas.get("frames", [])
+                        count = 0
+                        for idx, f in enumerate(frames):
+                            fid = f.get("id", f"node-{idx}")
+                            rps = 60.0 + (idx * 25.0) % 300.0
+                            p99 = 25.0 + (idx * 50.0) % 350.0
+                            err = 0.001 if idx % 3 != 0 else 0.02
+                            api_post(ep, "/api/telemetry", {"nodeId": fid, "rps": rps, "p99LatencyMs": p99, "errorRate": err})
+                            count += 1
+                        rendered = f"Simulated live telemetry updated for {count} nodes."
+                    else:
+                        res = api_get(ep, "/api/telemetry")
+                        rendered = json.dumps(res, indent=2)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -9895,6 +10253,31 @@ def main() -> None:
     p_crdt.add_argument("--iterations", type=int, default=15, help="Mutations per client (default: 15)")
     p_crdt.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # ide
+    p_ide = subparsers.add_parser("ide", help="Interact with IDE bridge (VS Code & Cursor companion)")
+    p_ide.add_argument("--active-file", help="Notify Kite of active file change in IDE")
+    p_ide.add_argument("--navigate", help="Trigger navigation to file in IDE")
+    p_ide.add_argument("--line", type=int, default=1, help="Target line number (default: 1)")
+    p_ide.add_argument("--column", type=int, default=1, help="Target column number (default: 1)")
+    p_ide.add_argument("--editor", default="vscode", help="Target IDE (vscode or cursor)")
+    p_ide.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    # lint-pr
+    p_lintpr = subparsers.add_parser("lint-pr", help="Run CI/CD architectural drift firewall against PR diff or local files")
+    p_lintpr.add_argument("files", nargs="*", help="Optional source files to audit")
+    p_lintpr.add_argument("--strict", action="store_true", default=True, help="Exit with code 1 if architectural violations found")
+    p_lintpr.add_argument("--lenient", action="store_false", dest="strict", help="Always exit with code 0")
+    p_lintpr.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    # telemetry
+    p_telem = subparsers.add_parser("telemetry", help="Ingest or query live Prometheus / OpenTelemetry SLA metrics")
+    p_telem.add_argument("--node-id", help="Canvas node ID to update")
+    p_telem.add_argument("--rps", type=float, default=100.0, help="Requests per second (default: 100.0)")
+    p_telem.add_argument("--p99", type=float, default=45.0, help="P99 latency in ms (default: 45.0)")
+    p_telem.add_argument("--error-rate", type=float, default=0.001, help="Error rate (e.g. 0.001 = 0.1%%)")
+    p_telem.add_argument("--simulate", action="store_true", help="Simulate live traffic across all canvas nodes")
+    p_telem.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -10001,6 +10384,12 @@ def main() -> None:
         cmd_erd(args)
     elif args.subcommand == "crdt":
         cmd_crdt(args)
+    elif args.subcommand == "ide":
+        cmd_ide(args)
+    elif args.subcommand == "lint-pr":
+        cmd_lint_pr(args)
+    elif args.subcommand == "telemetry":
+        cmd_telemetry(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

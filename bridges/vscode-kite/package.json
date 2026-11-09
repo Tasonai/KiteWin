@@ -1,0 +1,49 @@
+{
+  "name": "kite-ide-bridge",
+  "displayName": "Kite Architecture Bridge",
+  "description": "Bidirectional architecture canvas bridge for VS Code and Cursor",
+  "version": "1.0.0",
+  "publisher": "kite-team",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kite.focusNode",
+        "title": "Kite: Focus Node in Architecture Canvas"
+      },
+      {
+        "command": "kite.syncArchitecture",
+        "title": "Kite: Sync Architecture Canvas"
+      },
+      {
+        "command": "kite.openCanvas",
+        "title": "Kite: Open Canvas Studio"
+      }
+    ],
+    "configuration": {
+      "title": "Kite Architecture Bridge",
+      "properties": {
+        "kite.port": {
+          "type": "number",
+          "default": 24242,
+          "description": "Port of the local Kite Station (24242 for macOS, 24243 for Windows)"
+        },
+        "kite.autoFocus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically focus corresponding canvas node on active file change"
+        }
+      }
+    }
+  }
+}

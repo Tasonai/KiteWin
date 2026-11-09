@@ -273,6 +273,101 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/ide/active":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        var filePath = root.TryGetProperty("filePath", out var fp) ? fp.GetString() ?? "" : "";
+                        int? line = root.TryGetProperty("line", out var l) ? l.GetInt32() : null;
+                        var editor = root.TryGetProperty("editor", out var ed) ? ed.GetString() ?? "ide" : "ide";
+
+                        IDEBridgeHub.Shared.UpdateActiveFile(filePath, line);
+                        Broadcast("ide_active_file", new { filePath, line = line ?? 0, editor });
+                        await WriteJsonResponseAsync(res, new { status = "ok", filePath });
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/ide/navigate":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        var filePath = root.TryGetProperty("filePath", out var fp) ? fp.GetString() ?? "" : "";
+                        var line = root.TryGetProperty("line", out var l) ? l.GetInt32() : 1;
+                        var column = root.TryGetProperty("column", out var c) ? c.GetInt32() : 1;
+                        var editor = root.TryGetProperty("editor", out var ed) ? ed.GetString() ?? "vscode" : "vscode";
+
+                        Broadcast("ide_navigate", new { filePath, line, column, editor });
+                        await WriteJsonResponseAsync(res, new { status = "ok", navigated = true });
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/ide/status":
+                    var (activePath, activeLine) = IDEBridgeHub.Shared.CurrentActiveFile;
+                    await WriteJsonResponseAsync(res, new
+                    {
+                        status = "online",
+                        activeFilePath = activePath ?? "",
+                        activeLine = activeLine ?? 0
+                    });
+                    break;
+
+                case "/api/telemetry":
+                    if (req.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var all = IDEBridgeHub.Shared.AllTelemetries();
+                        await WriteJsonResponseAsync(res, all);
+                    }
+                    else if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        var telemetry = JsonSerializer.Deserialize<NodeTelemetry>(json, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        if (telemetry != null && !string.IsNullOrEmpty(telemetry.NodeId))
+                        {
+                            IDEBridgeHub.Shared.SetTelemetry(telemetry);
+                            Broadcast("telemetry_updated", new
+                            {
+                                nodeId = telemetry.NodeId,
+                                status = telemetry.Status,
+                                rps = telemetry.Rps,
+                                p99LatencyMs = telemetry.P99LatencyMs,
+                                errorRate = telemetry.ErrorRate
+                            });
+                            await WriteJsonResponseAsync(res, telemetry);
+                        }
+                        else
+                        {
+                            res.StatusCode = (int)HttpStatusCode.BadRequest;
+                            res.Close();
+                        }
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

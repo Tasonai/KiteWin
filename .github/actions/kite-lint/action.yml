@@ -1,0 +1,30 @@
+name: 'Kite Architectural Drift Firewall'
+description: 'Enforces architectural boundary rules and layer constraints against PR diffs with automated Mermaid topology'
+author: 'Kite Team'
+
+inputs:
+  strict:
+    description: 'Fail build if architectural violations are detected'
+    required: false
+    default: 'true'
+  out-md:
+    description: 'Output markdown summary report path'
+    required: false
+    default: 'KITE_DRIFT_REPORT.md'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Run Architectural Drift Firewall
+      shell: bash
+      run: |
+        STRICT_FLAG=""
+        if [ "${{ inputs.strict }}" = "false" ]; then
+          STRICT_FLAG="--lenient"
+        fi
+        python3 tools/kite-lint-action.py --out-md "${{ inputs.out-md }}" $STRICT_FLAG
