@@ -472,6 +472,75 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/worktree/status":
+                    var session = WorktreeSyncEngine.Instance.GetSession();
+                    await WriteJsonResponseAsync(res, session ?? new WorktreeSession());
+                    break;
+
+                case "/api/worktree/sync":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? branch = null;
+                        var defaultNodes = new List<(string Id, string Name, string Type)>
+                        {
+                            ("node-1", "Orders API", "api-service"),
+                            ("node-2", "Orders DB", "postgres-database"),
+                            ("node-3", "Order Events", "kafka-stream")
+                        };
+                        try
+                        {
+                            using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                            var json = await reader.ReadToEndAsync();
+                            if (!string.IsNullOrWhiteSpace(json))
+                            {
+                                using var doc = JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("branch", out var bProp))
+                                {
+                                    branch = bProp.GetString();
+                                }
+                            }
+                        }
+                        catch { }
+
+                        var syncRes = WorktreeSyncEngine.Instance.ExecuteSync(branchName: branch, nodes: defaultNodes);
+                        await WriteJsonResponseAsync(res, syncRes);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/worktree/pr":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? customTitle = null;
+                        try
+                        {
+                            using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                            var json = await reader.ReadToEndAsync();
+                            if (!string.IsNullOrWhiteSpace(json))
+                            {
+                                using var doc = JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("title", out var tProp))
+                                {
+                                    customTitle = tProp.GetString();
+                                }
+                            }
+                        }
+                        catch { }
+
+                        var prRes = WorktreeSyncEngine.Instance.SynthesizePullRequest(customTitle: customTitle);
+                        await WriteJsonResponseAsync(res, prRes);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
