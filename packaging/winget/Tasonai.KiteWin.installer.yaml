@@ -1,5 +1,5 @@
 PackageIdentifier: Tasonai.KiteWin
-PackageVersion: 1.1.0
+PackageVersion: 1.4.0
 InstallerType: exe
 Scope: user
 InstallerSwitches:
@@ -7,7 +7,7 @@ InstallerSwitches:
   SilentWithProgress: /S
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/Tasonai/KiteWin/releases/download/v1.1.0/KiteWin-1.1.0-Setup.exe
-    InstallerSha256: 7DAA5DF45153723A910756E3186840D956E93622E02409383977365E408AF113
+    InstallerUrl: https://github.com/Tasonai/KiteWin/releases/download/v1.4.0/KiteWin-1.4.0-Setup.exe
+    InstallerSha256: DD971FFA7157D393D2AD9C217BA713B3BA703BF43CCF6FB9B79BABDA4DB302E6
 ManifestType: installer
 ManifestVersion: 1.6.0

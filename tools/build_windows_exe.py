@@ -5,7 +5,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist")
 os.makedirs(DIST, exist_ok=True)
 
-VERSION = "1.3.0"
+VERSION = sys.argv[1] if len(sys.argv) > 1 else "1.4.0"
 
 print("1. Creating application payload zip...")
 payload_io = io.BytesIO()
