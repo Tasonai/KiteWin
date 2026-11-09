@@ -541,6 +541,117 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/audit/trail":
+                    var leaves = MerkleAuditEngine.Instance.AllLeaves();
+                    var root = MerkleAuditEngine.Instance.ComputeMerkleRoot();
+                    var auditPayload = new
+                    {
+                        rootHash = root.RootHash,
+                        leafCount = root.LeafCount,
+                        height = root.Height,
+                        generatedAt = root.GeneratedAtIso,
+                        leaves = leaves.Select(l => new
+                        {
+                            index = l.Index,
+                            action = l.Action,
+                            actor = l.Actor.Email,
+                            entityId = l.EntityId,
+                            leafHash = l.LeafHash,
+                            previousHash = l.PreviousHash
+                        }).ToList()
+                    };
+                    await WriteJsonResponseAsync(res, auditPayload);
+                    break;
+
+                case "/api/audit/record":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        var rootElem = doc.RootElement;
+                        var act = rootElem.TryGetProperty("action", out var aProp) ? aProp.GetString() ?? "nodeUpdated" : "nodeUpdated";
+                        var entId = rootElem.TryGetProperty("entityId", out var eProp) ? eProp.GetString() ?? "entity-1" : "entity-1";
+                        var entType = rootElem.TryGetProperty("entityType", out var etProp) ? etProp.GetString() ?? "node" : "node";
+                        var payload = rootElem.TryGetProperty("payload", out var pProp) ? pProp.GetString() ?? "{}" : "{}";
+
+                        var leaf = MerkleAuditEngine.Instance.RecordAction(act, entId, entType, payload);
+                        await WriteJsonResponseAsync(res, leaf);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/audit/verify":
+                    int leafIdx = 0;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                            var json = await reader.ReadToEndAsync();
+                            if (!string.IsNullOrWhiteSpace(json))
+                            {
+                                using var doc = JsonDocument.Parse(json);
+                                if (doc.RootElement.TryGetProperty("leafIndex", out var idxProp))
+                                {
+                                    leafIdx = idxProp.GetInt32();
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                    var proof = MerkleAuditEngine.Instance.GenerateInclusionProof(leafIdx);
+                    if (proof != null)
+                    {
+                        await WriteJsonResponseAsync(res, proof);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.NotFound;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/iam/session":
+                    var currentActor = MerkleAuditEngine.Instance.GetCurrentActor();
+                    await WriteJsonResponseAsync(res, currentActor);
+                    break;
+
+                case "/api/audit/rfc":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        var rootElem = doc.RootElement;
+                        var rfcId = rootElem.TryGetProperty("rfcId", out var rProp) ? rProp.GetString() ?? "" : "";
+                        var approve = rootElem.TryGetProperty("approve", out var apProp) && apProp.GetBoolean();
+
+                        var (success, error, item) = MerkleAuditEngine.Instance.SignOffRFC(rfcId, approve);
+                        if (success && item != null)
+                        {
+                            await WriteJsonResponseAsync(res, item);
+                        }
+                        else
+                        {
+                            res.StatusCode = (int)HttpStatusCode.Forbidden;
+                            var errBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { error }));
+                            res.ContentType = "application/json; charset=utf-8";
+                            await res.OutputStream.WriteAsync(errBytes);
+                            res.Close();
+                        }
+                    }
+                    else
+                    {
+                        var allRfcs = MerkleAuditEngine.Instance.AllRFCs();
+                        await WriteJsonResponseAsync(res, allRfcs);
+                    }
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
