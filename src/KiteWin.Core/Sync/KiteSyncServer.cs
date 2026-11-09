@@ -368,6 +368,71 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/relay/create":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var roomToken = RoomSecurityKeyDeriver.GenerateRoomToken();
+                        var resPayload = new
+                        {
+                            status = "ok",
+                            roomId = roomToken,
+                            joinUrl = $"kite://join?room={roomToken}",
+                            isEncrypted = true
+                        };
+                        await WriteJsonResponseAsync(res, resPayload);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/relay/status":
+                    var stats = WebRTCMeshManager.Shared.Statistics();
+                    var meshPeers = WebRTCMeshManager.Shared.ActivePeers();
+                    await WriteJsonResponseAsync(res, new
+                    {
+                        stats,
+                        peers = meshPeers,
+                        isOnline = true
+                    });
+                    break;
+
+                case "/api/relay/signal":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        var sigMsg = JsonSerializer.Deserialize<SignalingMessage>(json, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+                        if (sigMsg != null)
+                        {
+                            RelayStationHub.Shared.RouteMessage(sigMsg);
+                            Broadcast("relay_signal_routed", new { type = sigMsg.Type, roomId = sigMsg.RoomId, sender = sigMsg.SenderPeerId });
+                            await WriteJsonResponseAsync(res, new { status = "ok", routed = true });
+                        }
+                        else
+                        {
+                            res.StatusCode = (int)HttpStatusCode.BadRequest;
+                            res.Close();
+                        }
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case string s when s.StartsWith("/api/relay/messages"):
+                    var queryPeerId = req.QueryString["peerId"] ?? "";
+                    var msgs = RelayStationHub.Shared.PopMessages(queryPeerId);
+                    await WriteJsonResponseAsync(res, msgs);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
