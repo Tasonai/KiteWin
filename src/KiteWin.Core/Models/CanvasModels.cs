@@ -91,6 +91,9 @@ public sealed class CanvasFrame
 
     [JsonPropertyName("height")]
     public double Height { get; set; } = 520;
+
+    [JsonPropertyName("parentId")]
+    public string? ParentId { get; set; }
 }
 
 public sealed class CanvasReferenceCard
