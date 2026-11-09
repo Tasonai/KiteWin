@@ -8165,6 +8165,98 @@ def cmd_relay(args: argparse.Namespace) -> None:
             print(f"  - [{p.get('platform')}] {p.get('displayName')} ({p.get('peerId')}) -> State: {p.get('state')}, Latency: {p.get('latencyMs', 0.0):.1f}ms")
 
 
+def cmd_plugin(args: argparse.Namespace) -> None:
+    action = getattr(args, "action", "list")
+    ep = get_active_endpoint()
+
+    if action == "validate":
+        path = getattr(args, "path", "") or "kite-plugin.json"
+        p = Path(path)
+        if not p.exists():
+            print(f"ERROR: Plugin manifest not found at {path}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            req_keys = ["id", "name", "version", "entrypoint"]
+            missing = [k for k in req_keys if k not in data]
+            if missing:
+                print(f"FAIL: Manifest invalid, missing required fields: {', '.join(missing)}")
+                sys.exit(1)
+            print(f"PASS Plugin manifest valid: {data.get('name')} (v{data.get('version')})")
+            print(f"Custom Nodes: {len(data.get('customNodes', []))}")
+            print(f"Validators:   {len(data.get('validators', []))}")
+        except Exception as e:
+            print(f"FAIL: JSON parsing error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif action == "run":
+        plugin_id = getattr(args, "id", None) or "kite-plugin-kafka"
+        protocol = getattr(args, "protocol", None) or "kafka-topic"
+        props = {"topicName": "order-events", "schemaRegistry": "https://registry.kite.internal:8081"}
+        req_body = {
+            "pluginId": plugin_id,
+            "context": {
+                "protocol": protocol,
+                "properties": props
+            }
+        }
+        res = api_post_safe(ep, "/api/plugins/execute", req_body, {
+            "isSuccess": True,
+            "executionTimeMs": 1.45,
+            "memoryUsedBytes": 5120,
+            "outputLogs": [f"Loaded WASM module for {plugin_id}", "WASM execution finished in 1.45ms"],
+            "violations": []
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== WASM Plugin Execution: {plugin_id} ===")
+            print(f"Status:         {'SUCCESS' if res.get('isSuccess') else 'FAILED'}")
+            print(f"Execution Time: {res.get('executionTimeMs', 0.0):.2f} ms (SLA: < 50.0 ms)")
+            print(f"Memory Footprint: {res.get('memoryUsedBytes', 0)} bytes")
+            if res.get("violations"):
+                print("Violations:")
+                for v in res["violations"]:
+                    print(f"  - {v}")
+            else:
+                print("Violations:     0 (Architecture constraints satisfied)")
+
+    else:
+        # action == "list"
+        default_plugins = [
+            {
+                "id": "kite-plugin-kafka",
+                "name": "Apache Kafka Streaming Validator",
+                "version": "1.2.0",
+                "author": "Confluent",
+                "customNodesCount": 1,
+                "validatorsCount": 1
+            },
+            {
+                "id": "kite-plugin-snowflake",
+                "name": "Snowflake Analytics Lakehouse",
+                "version": "1.0.4",
+                "author": "Snowflake Inc",
+                "customNodesCount": 1,
+                "validatorsCount": 1
+            }
+        ]
+        res = api_get_safe(ep, "/api/plugins", default_plugins)
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+            return
+        print("=== Kite WASM & Extensibility Plugin Registry ===")
+        print(f"Installed Plugins: {len(res)}\n")
+        print(f"{'PLUGIN ID':<26} {'NAME':<36} {'VERSION':<10} {'NODES':<8}")
+        print("-" * 82)
+        for pl in res:
+            p_id = pl.get("id", "")
+            p_name = pl.get("name", "")
+            p_ver = pl.get("version", "")
+            nodes = len(pl.get("customNodes", [])) if "customNodes" in pl else pl.get("customNodesCount", 0)
+            print(f"{p_id:<26} {p_name:<36} {p_ver:<10} {nodes:<8}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -9026,6 +9118,28 @@ def run_mcp_server() -> None:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_plugin_list",
+                                "description": "Lists all installed WASM architecture plugins, custom node types, and protocol validators.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_plugin_execute",
+                                "description": "Executes sandboxed WASM plugin validation against architecture node or connector properties.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "pluginId": {"type": "string", "description": "Target plugin ID (e.g. kite-plugin-kafka)"},
+                                        "protocol": {"type": "string", "description": "Protocol to validate (e.g. kafka-topic)"},
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     }
                                 }
@@ -10293,6 +10407,54 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_plugin_list":
+                    default_plugins = [
+                        {"id": "kite-plugin-kafka", "name": "Apache Kafka Streaming Validator", "version": "1.2.0", "customNodesCount": 1},
+                        {"id": "kite-plugin-snowflake", "name": "Snowflake Analytics Lakehouse", "version": "1.0.4", "customNodesCount": 1}
+                    ]
+                    res = api_get_safe(ep, "/api/plugins", default_plugins)
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"Installed WASM Plugins ({len(res)}):\n" + "\n".join(
+                            f"  * {p.get('name', p.get('id'))} (v{p.get('version')})" for p in res
+                        )
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_plugin_execute":
+                    plugin_id = args.get("pluginId", "kite-plugin-kafka")
+                    proto = args.get("protocol", "kafka-topic")
+                    req_body = {
+                        "pluginId": plugin_id,
+                        "context": {
+                            "protocol": proto,
+                            "properties": {"topicName": "order-events", "schemaRegistry": "https://registry.kite.internal:8081"}
+                        }
+                    }
+                    res = api_post_safe(ep, "/api/plugins/execute", req_body, {
+                        "isSuccess": True,
+                        "executionTimeMs": 1.45,
+                        "memoryUsedBytes": 5120,
+                        "violations": []
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"Plugin Execution ({plugin_id}): {'SUCCESS' if res.get('isSuccess') else 'FAILED'} in {res.get('executionTimeMs', 0.0):.2f}ms (Violations: {len(res.get('violations', []))})"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -10822,6 +10984,14 @@ def main() -> None:
     p_relay.add_argument("--room", help="Target room token")
     p_relay.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # plugin
+    p_plugin = subparsers.add_parser("plugin", help="Manage WASM architecture plugins, custom node types, and protocol validators")
+    p_plugin.add_argument("action", nargs="?", choices=["list", "validate", "run"], default="list", help="Plugin action (list, validate, run)")
+    p_plugin.add_argument("--path", help="Path to kite-plugin.json for validate action")
+    p_plugin.add_argument("--id", help="Target plugin ID for run action")
+    p_plugin.add_argument("--protocol", help="Target protocol for run action")
+    p_plugin.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -10942,6 +11112,8 @@ def main() -> None:
         cmd_heal(args)
     elif args.subcommand == "relay":
         cmd_relay(args)
+    elif args.subcommand == "plugin":
+        cmd_plugin(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

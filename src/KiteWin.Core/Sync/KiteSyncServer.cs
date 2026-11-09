@@ -433,6 +433,45 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, msgs);
                     break;
 
+                case "/api/plugins":
+                    var plugins = WasmPluginEngine.Shared.AllPlugins();
+                    await WriteJsonResponseAsync(res, plugins);
+                    break;
+
+                case "/api/plugins/execute":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        var pluginId = root.TryGetProperty("pluginId", out var pId) ? pId.GetString() ?? "" : "";
+                        var context = new Dictionary<string, object>();
+                        if (root.TryGetProperty("context", out var ctxElem) && ctxElem.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (var prop in ctxElem.EnumerateObject())
+                            {
+                                if (prop.Value.ValueKind == JsonValueKind.String)
+                                    context[prop.Name] = prop.Value.GetString() ?? "";
+                                else if (prop.Value.ValueKind == JsonValueKind.Object)
+                                {
+                                    var inner = new Dictionary<string, string>();
+                                    foreach (var sub in prop.Value.EnumerateObject())
+                                        inner[sub.Name] = sub.Value.GetString() ?? "";
+                                    context[prop.Name] = inner;
+                                }
+                            }
+                        }
+                        var execResult = WasmPluginEngine.Shared.ExecutePlugin(pluginId, context);
+                        await WriteJsonResponseAsync(res, execResult);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
