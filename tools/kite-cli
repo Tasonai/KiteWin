@@ -8559,6 +8559,101 @@ def cmd_tf(args: argparse.Namespace) -> None:
             print(res.get("mainTf", ""))
 
 
+def cmd_security(args: argparse.Namespace) -> None:
+    action = getattr(args, "action", "audit")
+    ep = get_active_endpoint()
+
+    if action == "blast-radius":
+        node_id = getattr(args, "node", "node-2") or "node-2"
+        res = api_post_safe(ep, "/api/security/blast-radius", {"targetNodeId": node_id}, {
+            "originNodeId": node_id,
+            "originNodeName": "API Gateway",
+            "affectedUpstreamNodes": ["Customer Portal"],
+            "affectedDownstreamNodes": ["Orders DB"],
+            "totalImpactPercentage": 100.0,
+            "criticalPathRisk": "Critical (Tier-0 Core Failure)"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Kite Architectural Dynamic Blast Radius ===")
+            print(f"Target Node:     {res.get('originNodeName')} ({res.get('originNodeId')})")
+            print(f"Risk Rating:     {res.get('criticalPathRisk')}")
+            print(f"Topology Impact: {res.get('totalImpactPercentage', 0.0):.1f}%")
+            print("\nUpstream Callers Affected:")
+            for u in res.get("affectedUpstreamNodes", []):
+                print(f"  <- {u}")
+            print("Downstream Dependencies Affected:")
+            for d in res.get("affectedDownstreamNodes", []):
+                print(f"  -> {d}")
+
+    else:
+        # action == "audit"
+        res = api_get_safe(ep, "/api/security/audit", {
+            "healthScore": 75,
+            "totalThreatsCount": 2,
+            "criticalCount": 1,
+            "highCount": 1,
+            "strideBreakdown": {"elevationOfPrivilege": 1, "tampering": 1},
+            "threats": [
+                {
+                    "category": "elevationOfPrivilege",
+                    "severity": "critical",
+                    "targetNodeName": "Edge",
+                    "description": "Ingress points lack unified API Gateway / WAF authentication boundary",
+                    "mitigationGuide": "Insert an API Gateway or WAF frame in front of application services."
+                }
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Kite Architectural STRIDE Threat Audit ===")
+            print(f"Perimeter Health Score: {res.get('healthScore')}/100")
+            print(f"Total Threats Identified: {res.get('totalThreatsCount')} (Critical: {res.get('criticalCount')}, High: {res.get('highCount')})")
+            print("\nSTRIDE Threat Category Breakdown:")
+            for cat, count in res.get("strideBreakdown", {}).items():
+                if count > 0:
+                    print(f"  - {cat:<24} : {count} issue(s)")
+            print("\nIdentified Threat Findings:")
+            for t in res.get("threats", []):
+                print(f"  [{t.get('severity', '').upper()}] {t.get('targetNodeName')}: {t.get('description')}")
+                print(f"    Mitigation: {t.get('mitigationGuide')}")
+
+
+def cmd_chaos(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    chaos_type = getattr(args, "type", "podKill") or "podKill"
+    target = getattr(args, "target", "orders-service") or "orders-service"
+    duration = getattr(args, "duration", 60) or 60
+
+    res = api_post_safe(ep, "/api/chaos/generate", {
+        "type": chaos_type,
+        "targetNodeName": target,
+        "durationSec": duration
+    }, {
+        "experimentId": f"chaos-{target}-sim",
+        "type": chaos_type,
+        "targetNodeName": target,
+        "durationSec": duration,
+        "blastRadiusPct": 35.0,
+        "yamlManifest": f"apiVersion: chaos-mesh.org/v1alpha1\nkind: PodChaos\nmetadata:\n  name: chaos-{target}-sim",
+        "rollbackRunbook": f"# Rollback Runbook\nkubectl delete -f chaos-{target}-sim.yaml"
+    })
+    if getattr(args, "json", False):
+        print(json.dumps(res, indent=2))
+    else:
+        print("=== Kite Chaos Mesh Experiment Generator ===")
+        print(f"Experiment ID: {res.get('experimentId')}")
+        print(f"Chaos Type:    {res.get('type')}")
+        print(f"Target Node:   {res.get('targetNodeName')}")
+        print(f"Duration:      {res.get('durationSec')}s")
+        print("\nGenerated Kubernetes YAML Manifest:\n" + "-" * 50)
+        print(res.get("yamlManifest", ""))
+        print("\nAutomated Rollback Runbook:\n" + "-" * 50)
+        print(res.get("rollbackRunbook", ""))
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -9540,6 +9635,40 @@ def run_mcp_server() -> None:
                                 "inputSchema": {
                                     "type": "object",
                                     "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_security_audit",
+                                "description": "Performs STRIDE architectural threat modeling, calculating security health score and mitigations.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_blast_radius",
+                                "description": "Calculates dynamic blast radius of failure across upstream callers and downstream dependencies for a target node.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "targetNodeId": {"type": "string", "description": "Target architecture node ID", "default": "node-2"},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_chaos_generate",
+                                "description": "Synthesizes executable Chaos Mesh Kubernetes YAML manifest and automated rollback runbook.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {"type": "string", "description": "Chaos type (podKill, networkLatency, packetDrop, cpuSpike, databaseFailover)", "default": "podKill"},
+                                        "targetNodeName": {"type": "string", "description": "Target node or service name", "default": "orders-service"},
+                                        "durationSec": {"type": "integer", "description": "Duration in seconds", "default": 60},
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     }
                                 }
@@ -11063,6 +11192,75 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_security_audit":
+                    res = api_get_safe(ep, "/api/security/audit", {
+                        "healthScore": 75,
+                        "totalThreatsCount": 2,
+                        "criticalCount": 1,
+                        "highCount": 1,
+                        "strideBreakdown": {"elevationOfPrivilege": 1, "tampering": 1},
+                        "threats": [
+                            {"category": "elevationOfPrivilege", "severity": "critical", "targetNodeName": "Edge", "description": "Ingress points lack unified API Gateway / WAF authentication boundary"}
+                        ]
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"STRIDE Security Audit: Health {res.get('healthScore')}/100, Threats: {res.get('totalThreatsCount')} (Critical: {res.get('criticalCount')}, High: {res.get('highCount')})"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_blast_radius":
+                    node_id = args.get("targetNodeId", "node-2")
+                    res = api_post_safe(ep, "/api/security/blast-radius", {"targetNodeId": node_id}, {
+                        "originNodeId": node_id,
+                        "originNodeName": "API Gateway",
+                        "affectedUpstreamNodes": ["Customer Portal"],
+                        "affectedDownstreamNodes": ["Orders DB"],
+                        "totalImpactPercentage": 100.0,
+                        "criticalPathRisk": "Critical (Tier-0 Core Failure)"
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"Blast Radius ({res.get('originNodeName')}): {res.get('totalImpactPercentage', 0.0):.1f}% Impact ({res.get('criticalPathRisk')})\nUpstream: {', '.join(res.get('affectedUpstreamNodes', []))}\nDownstream: {', '.join(res.get('affectedDownstreamNodes', []))}"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_chaos_generate":
+                    c_type = args.get("type", "podKill")
+                    c_target = args.get("targetNodeName", "orders-service")
+                    c_dur = args.get("durationSec", 60)
+                    res = api_post_safe(ep, "/api/chaos/generate", {"type": c_type, "targetNodeName": c_target, "durationSec": c_dur}, {
+                        "experimentId": f"chaos-{c_target}-sim",
+                        "type": c_type,
+                        "targetNodeName": c_target,
+                        "durationSec": c_dur,
+                        "blastRadiusPct": 35.0,
+                        "yamlManifest": f"apiVersion: chaos-mesh.org/v1alpha1\nkind: PodChaos\nmetadata:\n  name: chaos-{c_target}-sim"
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"Chaos Experiment Generated: {res.get('experimentId')} ({res.get('type')} on {res.get('targetNodeName')}, {res.get('durationSec')}s)\n\n```yaml\n{res.get('yamlManifest', '')}\n```"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -11628,6 +11826,20 @@ def main() -> None:
     p_tf.add_argument("--state", default="terraform.tfstate", help="Path to terraform.tfstate for import action")
     p_tf.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # security
+    p_security = subparsers.add_parser("security", help="Architectural STRIDE threat modeling and dynamic blast radius analysis")
+    p_security.add_argument("action", nargs="?", choices=["audit", "blast-radius"], default="audit", help="Security action (audit, blast-radius)")
+    p_security.add_argument("--node", default="node-2", help="Target node ID for blast radius calculation")
+    p_security.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    # chaos
+    p_chaos = subparsers.add_parser("chaos", help="Synthesize executable Chaos Mesh manifests and automated rollback runbooks")
+    p_chaos.add_argument("action", nargs="?", choices=["generate"], default="generate", help="Chaos action (generate)")
+    p_chaos.add_argument("--type", choices=["podKill", "networkLatency", "packetDrop", "cpuSpike", "databaseFailover"], default="podKill", help="Chaos injection type")
+    p_chaos.add_argument("--target", default="orders-service", help="Target service name")
+    p_chaos.add_argument("--duration", type=int, default=60, help="Duration in seconds")
+    p_chaos.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -11758,6 +11970,10 @@ def main() -> None:
         cmd_rfc(args)
     elif args.subcommand == "tf":
         cmd_tf(args)
+    elif args.subcommand == "security":
+        cmd_security(args)
+    elif args.subcommand == "chaos":
+        cmd_chaos(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

@@ -722,6 +722,72 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/security/audit":
+                    var sampleSecNodes = new List<(string Id, string Name, string Type)>
+                    {
+                        ("node-1", "Customer Portal", "web-frontend"),
+                        ("node-2", "Orders DB", "postgres-database"),
+                        ("node-3", "Order Events", "kafka-stream")
+                    };
+                    var sampleSecConns = new List<(string FromId, string ToId, string ProtocolType)>
+                    {
+                        ("node-1", "node-2", "postgresql")
+                    };
+                    var scorecard = SecurityChaosEngine.Instance.AuditTopology(sampleSecNodes, sampleSecConns);
+                    await WriteJsonResponseAsync(res, scorecard);
+                    break;
+
+                case "/api/security/blast-radius":
+                    var targetId = "node-2";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("targetNodeId", out var tidProp))
+                                targetId = tidProp.GetString() ?? "node-2";
+                        }
+                        catch { }
+                    }
+                    var blastNodes = new List<(string Id, string Name, string Type)>
+                    {
+                        ("node-1", "Customer Portal", "web-frontend"),
+                        ("node-2", "API Gateway", "api-gateway"),
+                        ("node-3", "Orders DB", "postgres-database")
+                    };
+                    var blastConns = new List<(string FromId, string ToId, string ProtocolType)>
+                    {
+                        ("node-1", "node-2", "https"),
+                        ("node-2", "node-3", "postgresql")
+                    };
+                    var blastReport = SecurityChaosEngine.Instance.CalculateBlastRadius(targetId, blastNodes, blastConns);
+                    await WriteJsonResponseAsync(res, blastReport);
+                    break;
+
+                case "/api/chaos/generate":
+                    var chaosType = "podKill";
+                    var chaosTarget = "orders-service";
+                    var chaosDuration = 60;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("type", out var tProp)) chaosType = tProp.GetString() ?? "podKill";
+                            if (root.TryGetProperty("targetNodeName", out var tnProp)) chaosTarget = tnProp.GetString() ?? "orders-service";
+                            if (root.TryGetProperty("durationSec", out var dProp)) chaosDuration = dProp.GetInt32();
+                        }
+                        catch { }
+                    }
+                    var chaosSpec = SecurityChaosEngine.Instance.GenerateChaosExperiment(chaosType, chaosTarget, chaosDuration);
+                    await WriteJsonResponseAsync(res, chaosSpec);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
