@@ -829,6 +829,101 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, chatRes);
                     break;
 
+                case "/api/timetravel/timeline":
+                    var timeline = TimeTravelReplayEngine.Instance.GetTimeline();
+                    var incidents = TimeTravelReplayEngine.Instance.GetIncidents();
+                    var timelinePayload = new
+                    {
+                        snapshots = timeline.Select(s => new
+                        {
+                            id = s.Id,
+                            timestamp = s.Timestamp,
+                            author = s.Author,
+                            message = s.Message,
+                            nodeCount = s.NodeCount,
+                            connectorCount = s.ConnectorCount,
+                            incidentIds = s.IncidentIds
+                        }).ToList(),
+                        incidents = incidents.Select(i => new
+                        {
+                            id = i.Id,
+                            title = i.Title,
+                            severity = i.Severity,
+                            service = i.Service,
+                            timestamp = i.Timestamp,
+                            status = i.Status,
+                            mttrMinutes = i.MttrMinutes,
+                            suspectedSnapshotId = i.SuspectedSnapshotId
+                        }).ToList()
+                    };
+                    await WriteJsonResponseAsync(res, timelinePayload);
+                    break;
+
+                case "/api/timetravel/snapshot":
+                    var snapshotId = "snap-v1.0.0";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("snapshotId", out var sProp))
+                                snapshotId = sProp.GetString() ?? snapshotId;
+                        }
+                        catch { }
+                    }
+                    var snapshot = TimeTravelReplayEngine.Instance.GetSnapshot(snapshotId);
+                    if (snapshot != null)
+                    {
+                        await WriteJsonResponseAsync(res, snapshot);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.NotFound;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/timetravel/diff":
+                    var fromId = "snap-v1.0.0";
+                    var toId = "snap-v1.3.0";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("fromId", out var fProp))
+                                fromId = fProp.GetString() ?? fromId;
+                            if (doc.RootElement.TryGetProperty("toId", out var tProp))
+                                toId = tProp.GetString() ?? toId;
+                        }
+                        catch { }
+                    }
+                    var diffResult = TimeTravelReplayEngine.Instance.ComputeDiff(fromId, toId);
+                    await WriteJsonResponseAsync(res, diffResult);
+                    break;
+
+                case "/api/timetravel/correlate":
+                    var incId = "INC-7102";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("incidentId", out var iProp))
+                                incId = iProp.GetString() ?? incId;
+                        }
+                        catch { }
+                    }
+                    var correlationResult = TimeTravelReplayEngine.Instance.CorrelateIncident(incId);
+                    await WriteJsonResponseAsync(res, correlationResult);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

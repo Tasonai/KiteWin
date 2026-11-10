@@ -8735,6 +8735,97 @@ def cmd_local_ai(args: argparse.Namespace) -> None:
             print(f"Air-Gap Security:   {'ENFORCED (Zero Public Telemetry)' if res.get('isAirGappedEnforced') else 'DISABLED'}")
 
 
+def cmd_timetravel(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "timeline") or "timeline"
+
+    if action == "diff":
+        from_id = getattr(args, "from_id", "snap-v1.0.0") or "snap-v1.0.0"
+        to_id = getattr(args, "to_id", "snap-v1.3.0") or "snap-v1.3.0"
+        res = api_post_safe(ep, "/api/timetravel/diff", {"fromId": from_id, "toId": to_id}, {
+            "fromSnapshotId": from_id,
+            "toSnapshotId": to_id,
+            "addedNodes": [{"id": "node-bill-v2", "name": "Billing Service v2", "type": "api-service"}],
+            "removedNodes": [],
+            "modifiedNodes": [],
+            "addedConnectors": [],
+            "removedConnectors": [],
+            "summary": f"Temporal diff from {from_id} to {to_id}: +1 nodes, 0 removed, 0 modified."
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== 4D Canvas Temporal Delta Diff ===")
+            print(f"From Snapshot: {res.get('fromSnapshotId')}")
+            print(f"To Snapshot:   {res.get('toSnapshotId')}")
+            print(f"Summary:       {res.get('summary')}")
+            if res.get("addedNodes"):
+                print("\nAdded Nodes:")
+                for n in res.get("addedNodes"):
+                    print(f"  + [{n.get('type')}] {n.get('name')} (id: {n.get('id')})")
+            if res.get("removedNodes"):
+                print("\nRemoved Nodes:")
+                for n in res.get("removedNodes"):
+                    print(f"  - [{n.get('type')}] {n.get('name')} (id: {n.get('id')})")
+
+    elif action == "correlate":
+        incident_id = getattr(args, "incident", "INC-7102") or "INC-7102"
+        res = api_post_safe(ep, "/api/timetravel/correlate", {"incidentId": incident_id}, {
+            "incident": {"id": incident_id, "title": "Cascading Timeout in Checkout Path during Flash Sale", "severity": "P1"},
+            "suspectedSnapshot": {"id": "snap-v1.2.0", "message": "Add payment and legacy synchronous billing integration", "author": "payments-team@kite.internal"},
+            "probableCauses": ["Synchronous tight coupling detected on critical transaction path without circuit breaker."],
+            "confidenceScore": 0.94,
+            "recommendations": ["Decouple synchronous dependency with asynchronous Kafka/RabbitMQ message queue.", "Introduce resilient retry backoff and circuit breaker pattern on upstream callers."]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            inc = res.get("incident", {})
+            snap = res.get("suspectedSnapshot", {})
+            print("=== Incident Post-Mortem Root Cause Analysis ===")
+            print(f"Incident:     {inc.get('id')} [{inc.get('severity')}] - {inc.get('title')}")
+            print(f"Confidence:   {res.get('confidenceScore', 0.0) * 100:.1f}%")
+            if snap:
+                print(f"Suspected Mutation: {snap.get('id')} by {snap.get('author')}")
+                print(f"Commit/Message:     \"{snap.get('message')}\"")
+            print("\nProbable Root Causes:")
+            for c in res.get("probableCauses", []):
+                print(f"  * {c}")
+            print("\nRecommended Architectural Remediations:")
+            for r in res.get("recommendations", []):
+                print(f"  -> {r}")
+
+    else:
+        # action == "timeline"
+        res = api_get_safe(ep, "/api/timetravel/timeline", {
+            "snapshots": [
+                {"id": "snap-v1.0.0", "timestamp": "2026-11-01T08:00:00Z", "author": "devops@kite.internal", "message": "Initial production microservice deployment", "nodeCount": 3, "connectorCount": 2, "incidentIds": []},
+                {"id": "snap-v1.2.0", "timestamp": "2026-11-05T14:30:00Z", "author": "payments-team@kite.internal", "message": "Add payment and legacy synchronous billing integration", "nodeCount": 5, "connectorCount": 4, "incidentIds": ["INC-7102"]},
+                {"id": "snap-v1.3.0", "timestamp": "2026-11-09T18:00:00Z", "author": "sre-core@kite.internal", "message": "Decouple payment pipeline with async message queue", "nodeCount": 6, "connectorCount": 5, "incidentIds": []}
+            ],
+            "incidents": [
+                {"id": "INC-7102", "title": "Cascading Timeout in Checkout Path during Flash Sale", "severity": "P1", "service": "Payment Service", "status": "resolved", "mttrMinutes": 42}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            snaps = res.get("snapshots", [])
+            incs = res.get("incidents", [])
+            print("=== 4D Canvas Time-Travel Scrubbing Timeline ===")
+            print(f"Recorded Architecture Snapshots: {len(snaps)}\n")
+            for s in snaps:
+                inc_badge = f" [Linked Incident: {', '.join(s.get('incidentIds', []))}]" if s.get("incidentIds") else ""
+                print(f"  [{s.get('id')}] ({s.get('timestamp')}) - {s.get('author')}")
+                print(f"    Message:  \"{s.get('message')}\"")
+                print(f"    Topology: {s.get('nodeCount')} nodes, {s.get('connectorCount')} connectors{inc_badge}\n")
+            if incs:
+                print(f"Production Incident Telemetry ({len(incs)} records):")
+                for i in incs:
+                    print(f"  [{i.get('severity')}] {i.get('id')}: {i.get('title')}")
+                    print(f"    Service: {i.get('service')} | MTTR: {i.get('mttrMinutes')} min | Status: {i.get('status')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -9784,6 +9875,39 @@ def run_mcp_server() -> None:
                                         "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
                                     },
                                     "required": ["prompt"]
+                                }
+                            },
+                            {
+                                "name": "kite_timetravel_timeline",
+                                "description": "Returns historical 4D canvas timeline snapshots and registered production incidents.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_timetravel_diff",
+                                "description": "Calculates semantic and visual delta diff between two historical architecture snapshots.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "fromId": {"type": "string", "description": "Source snapshot ID", "default": "snap-v1.0.0"},
+                                        "toId": {"type": "string", "description": "Target snapshot ID", "default": "snap-v1.3.0"},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_timetravel_correlate",
+                                "description": "Correlates production incident telemetry with architecture mutations to identify root causes and suggest remediations.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "incidentId": {"type": "string", "description": "Incident ID (e.g. INC-7102)", "default": "INC-7102"},
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
                                 }
                             }
                         ]
@@ -11436,6 +11560,94 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_timetravel_timeline":
+                    res = api_get_safe(ep, "/api/timetravel/timeline", {
+                        "snapshots": [
+                            {"id": "snap-v1.0.0", "message": "Initial microservice deployment", "nodeCount": 3, "connectorCount": 2},
+                            {"id": "snap-v1.2.0", "message": "Add payment and legacy billing", "nodeCount": 5, "connectorCount": 4, "incidentIds": ["INC-7102"]},
+                            {"id": "snap-v1.3.0", "message": "Decouple payment pipeline with async message queue", "nodeCount": 6, "connectorCount": 5}
+                        ],
+                        "incidents": [
+                            {"id": "INC-7102", "title": "Cascading Timeout in Checkout Path", "severity": "P1", "status": "resolved", "mttrMinutes": 42}
+                        ]
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        snaps = res.get("snapshots", [])
+                        incs = res.get("incidents", [])
+                        lines = [f"4D Time-Travel Canvas Timeline ({len(snaps)} snapshots, {len(incs)} incidents):"]
+                        for s in snaps:
+                            inc_tag = f" [Linked: {', '.join(s.get('incidentIds', []))}]" if s.get('incidentIds') else ""
+                            lines.append(f"  * {s.get('id')}: {s.get('message')} ({s.get('nodeCount')} nodes, {s.get('connectorCount')} connectors){inc_tag}")
+                        if incs:
+                            lines.append("\nIncidents:")
+                            for i in incs:
+                                lines.append(f"  - [{i.get('severity')}] {i.get('id')}: {i.get('title')} (MTTR: {i.get('mttrMinutes')}m, status: {i.get('status')})")
+                        rendered = "\n".join(lines)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_timetravel_diff":
+                    f_id = args.get("fromId", "snap-v1.0.0")
+                    t_id = args.get("toId", "snap-v1.3.0")
+                    res = api_post_safe(ep, "/api/timetravel/diff", {"fromId": f_id, "toId": t_id}, {
+                        "fromSnapshotId": f_id,
+                        "toSnapshotId": t_id,
+                        "addedNodes": [{"id": "node-bill-v2", "name": "Billing Service v2", "type": "api-service"}],
+                        "removedNodes": [],
+                        "modifiedNodes": [],
+                        "addedConnectors": [],
+                        "removedConnectors": [],
+                        "summary": f"Temporal diff from {f_id} to {t_id}: +1 nodes, 0 removed, 0 modified."
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        rendered = f"Temporal Delta Diff ({res.get('fromSnapshotId')} -> {res.get('toSnapshotId')}):\n{res.get('summary')}"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
+                elif tool_name == "kite_timetravel_correlate":
+                    inc_id = args.get("incidentId", "INC-7102")
+                    res = api_post_safe(ep, "/api/timetravel/correlate", {"incidentId": inc_id}, {
+                        "incident": {"id": inc_id, "title": "Cascading Timeout in Checkout Path", "severity": "P1"},
+                        "suspectedSnapshot": {"id": "snap-v1.2.0", "message": "Add payment and legacy synchronous billing integration"},
+                        "probableCauses": ["Synchronous tight coupling detected on critical transaction path without circuit breaker."],
+                        "confidenceScore": 0.94,
+                        "recommendations": ["Decouple synchronous dependency with asynchronous Kafka/RabbitMQ message queue."]
+                    })
+                    if args.get("json", False):
+                        rendered = json.dumps(res, indent=2)
+                    else:
+                        inc = res.get("incident", {})
+                        snap = res.get("suspectedSnapshot", {})
+                        rendered = (
+                            f"Incident Post-Mortem Correlation: {inc.get('id')} [{inc.get('severity')}]\n"
+                            f"Title: {inc.get('title')}\n"
+                            f"Confidence: {res.get('confidenceScore', 0.0) * 100:.0f}%\n"
+                            f"Suspected Mutation: {snap.get('id', 'N/A')} - {snap.get('message', 'N/A')}\n"
+                            f"Probable Causes:\n" + "\n".join(f"  * {c}" for c in res.get("probableCauses", [])) + "\n"
+                            f"Recommendations:\n" + "\n".join(f"  -> {r}" for r in res.get("recommendations", []))
+                        )
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "content": [{"type": "text", "text": rendered}]
+                        }
+                    })
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12013,6 +12225,14 @@ def main() -> None:
     p_local_ai.add_argument("--prompt", help="Architecture guidance prompt for chat action")
     p_local_ai.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # timetravel
+    p_timetravel = subparsers.add_parser("timetravel", help="4D time-travel canvas replay, historical diffing, and incident post-mortem correlation")
+    p_timetravel.add_argument("action", nargs="?", choices=["timeline", "diff", "correlate"], default="timeline", help="Timetravel action (timeline, diff, correlate)")
+    p_timetravel.add_argument("--from-id", default="snap-v1.0.0", help="Source snapshot ID for diff")
+    p_timetravel.add_argument("--to-id", default="snap-v1.3.0", help="Target snapshot ID for diff")
+    p_timetravel.add_argument("--incident", default="INC-7102", help="Incident ID for correlate action")
+    p_timetravel.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -12147,6 +12367,8 @@ def main() -> None:
         cmd_security(args)
     elif args.subcommand == "local-ai":
         cmd_local_ai(args)
+    elif args.subcommand == "timetravel":
+        cmd_timetravel(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
