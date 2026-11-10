@@ -924,6 +924,47 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, correlationResult);
                     break;
 
+                case "/api/cluster/status":
+                    var clusterStatus = AirGappedClusterEngine.Instance.GetClusterStatus();
+                    await WriteJsonResponseAsync(res, clusterStatus);
+                    break;
+
+                case "/api/cluster/elect":
+                    string? candidateId = null;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("candidateId", out var cProp))
+                                candidateId = cProp.GetString();
+                        }
+                        catch { }
+                    }
+                    var electResult = AirGappedClusterEngine.Instance.TriggerLeaderElection(candidateId);
+                    await WriteJsonResponseAsync(res, electResult);
+                    break;
+
+                case "/api/cluster/manifest":
+                    int replicas = 3;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("replicas", out var rProp) && rProp.TryGetInt32(out var rVal))
+                                replicas = rVal;
+                        }
+                        catch { }
+                    }
+                    var k8sManifest = AirGappedClusterEngine.Instance.GenerateOperatorManifest(replicas);
+                    await WriteJsonResponseAsync(res, k8sManifest);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
