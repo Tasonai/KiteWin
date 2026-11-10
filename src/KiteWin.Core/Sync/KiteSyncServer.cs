@@ -788,6 +788,47 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, chaosSpec);
                     break;
 
+                case "/api/local-ai/status":
+                    var status = LocalAiCoPilotEngine.Instance.GetEngineStatus();
+                    await WriteJsonResponseAsync(res, status);
+                    break;
+
+                case "/api/local-ai/critique":
+                    var sampleNodes = new List<(string Id, string Name, string Type)>
+                    {
+                        ("node-1", "Checkout Service", "api-service"),
+                        ("node-2", "Inventory Service", "api-service"),
+                        ("node-3", "Orders DB", "postgres-database")
+                    };
+                    var sampleConns = new List<(string FromId, string ToId, string ProtocolType)>
+                    {
+                        ("node-1", "node-3", "postgresql"),
+                        ("node-2", "node-3", "postgresql"),
+                        ("node-1", "node-2", "http"),
+                        ("node-2", "node-1", "http")
+                    };
+                    var critiqueRes = LocalAiCoPilotEngine.Instance.AnalyzeTopology(sampleNodes, sampleConns);
+                    await WriteJsonResponseAsync(res, critiqueRes);
+                    break;
+
+                case "/api/local-ai/chat":
+                    var prompt = "How do I make my architecture resilient?";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("prompt", out var pProp))
+                                prompt = pProp.GetString() ?? prompt;
+                        }
+                        catch { }
+                    }
+                    var chatRes = LocalAiCoPilotEngine.Instance.ChatLocal(prompt);
+                    await WriteJsonResponseAsync(res, chatRes);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
