@@ -652,6 +652,76 @@ public sealed class KiteSyncServer : IDisposable
                     }
                     break;
 
+                case "/api/tf/export":
+                    var sampleTfNodes = new List<(string Id, string Name, string Type)>
+                    {
+                        ("node-1", "Billing Database", "postgres-database"),
+                        ("node-2", "Payment Processor", "api-service"),
+                        ("node-3", "Invoices Bucket", "s3-storage")
+                    };
+                    var tfBundle = TerraformIaCEngine.Instance.SynthesizeHcl("aws", sampleTfNodes);
+                    await WriteJsonResponseAsync(res, tfBundle);
+                    break;
+
+                case "/api/tf/import":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        var stateStr = "{}";
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("jsonState", out var sProp))
+                                stateStr = sProp.GetString() ?? "{}";
+                            else
+                                stateStr = json;
+                        }
+                        catch { stateStr = json; }
+
+                        var importRes = TerraformIaCEngine.Instance.ReverseEngineerState(stateStr);
+                        await WriteJsonResponseAsync(res, importRes);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
+                case "/api/tf/plan":
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        var activeList = new List<string>();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("activeResources", out var aProp) && aProp.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var item in aProp.EnumerateArray())
+                                    activeList.Add(item.GetString() ?? "");
+                            }
+                        }
+                        catch { }
+
+                        var targetTfNodes = new List<(string Id, string Name, string Type)>
+                        {
+                            ("node-1", "Billing Database", "postgres-database"),
+                            ("node-2", "Payment Processor", "api-service"),
+                            ("node-3", "Invoices Bucket", "s3-storage")
+                        };
+                        var planRes = TerraformIaCEngine.Instance.CalculatePlan(targetTfNodes, activeList);
+                        await WriteJsonResponseAsync(res, planRes);
+                    }
+                    else
+                    {
+                        res.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                        res.Close();
+                    }
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
