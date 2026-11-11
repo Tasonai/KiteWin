@@ -1596,6 +1596,53 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, admBundle);
                     break;
 
+                case "/api/privacy/lineage":
+                    var lineageFlows = DataResidencyPrivacyEngine.Instance.GetLineageFlows();
+                    await WriteJsonResponseAsync(res, new { flows = lineageFlows });
+                    break;
+
+                case "/api/privacy/audit-residency":
+                    bool strictSchrems = true;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("enforceStrictSchremsII", out var sProp) && (sProp.ValueKind == JsonValueKind.True || sProp.ValueKind == JsonValueKind.False))
+                                strictSchrems = sProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var resAudit = DataResidencyPrivacyEngine.Instance.AuditResidencyCompliance(strictSchrems);
+                    await WriteJsonResponseAsync(res, resAudit);
+                    break;
+
+                case "/api/privacy/dp-budget":
+                    double dpEps = 0.5;
+                    double dpDel = 1e-5;
+                    double dpSens = 1.0;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("epsilon", out var eProp) && eProp.TryGetDouble(out var eVal))
+                                dpEps = eVal;
+                            if (doc.RootElement.TryGetProperty("delta", out var dProp) && dProp.TryGetDouble(out var dVal))
+                                dpDel = dVal;
+                            if (doc.RootElement.TryGetProperty("sensitivity", out var sProp) && sProp.TryGetDouble(out var sVal))
+                                dpSens = sVal;
+                        }
+                        catch { }
+                    }
+                    var dpBundle = DataResidencyPrivacyEngine.Instance.CalibrateDifferentialPrivacy(dpEps, dpDel, dpSens);
+                    await WriteJsonResponseAsync(res, dpBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

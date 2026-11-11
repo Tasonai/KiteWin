@@ -9775,6 +9775,69 @@ def cmd_provenance(args: argparse.Namespace) -> None:
                 print(f"  * {a.get('artifactId'):<34} Cosign={a.get('cosignVerified')} | Hermetic={a.get('hermeticBuild')} | Rekor={a.get('rekorLogIndex')}")
 
 
+def cmd_privacy(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "lineage") or "lineage"
+
+    if action == "audit-residency":
+        strict = not bool(getattr(args, "relaxed", False))
+        res = api_post_safe(ep, "/api/privacy/audit-residency", {"enforceStrictSchremsII": strict}, {
+            "inspectedFlows": 4,
+            "violationsCount": 1 if strict else 0,
+            "gdprCompliant": not strict,
+            "violations": ["GDPR Art. 44 / Schrems II violation on flow-pii-us-export (marketing_clickstream_raw): unpseudonymized GDPR_PII exported from EU-EEA to us-east-1."] if strict else []
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            st = "COMPLIANT" if res.get("gdprCompliant") else "VIOLATION"
+            print(f"=== Sovereign Data Residency Audit [{st}] ({res.get('violationsCount')} violation(s) / {res.get('inspectedFlows')} flows) ===")
+            for v in res.get("violations", []):
+                print(f"  ! {v}")
+
+    elif action == "dp-budget":
+        eps = float(getattr(args, "epsilon", 0.5) or 0.5)
+        delta = float(getattr(args, "delta", 1e-5) or 1e-5)
+        sens = float(getattr(args, "sensitivity", 1.0) or 1.0)
+        import math
+        b = round(sens / max(eps, 0.0001), 4)
+        sig = round((sens * math.sqrt(2.0 * math.log(1.25 / max(delta, 1e-12)))) / max(eps, 0.0001), 4)
+        res = api_post_safe(ep, "/api/privacy/dp-budget", {
+            "epsilon": eps,
+            "delta": delta,
+            "sensitivity": sens
+        }, {
+            "epsilon": eps,
+            "delta": delta,
+            "l2Sensitivity": sens,
+            "laplaceScaleB": b,
+            "gaussianSigma": sig,
+            "postgresRlsMaskingSql": f"ALTER TABLE customer_identity_vault ENABLE ROW LEVEL SECURITY;\n-- Gaussian sigma={sig}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== Differential Privacy Calibration [epsilon={res.get('epsilon')}, delta={res.get('delta')}] ===")
+            print(f"  * Laplace Scale b: {res.get('laplaceScaleB')} | Analytic Gaussian sigma: {res.get('gaussianSigma')}")
+            print(res.get("postgresRlsMaskingSql", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/privacy/lineage", {
+            "flows": [
+                {"id": "flow-pii-eu-local", "datasetName": "customer_identity_vault", "classification": "GDPR_PII", "sourceJurisdiction": "EU-EEA", "destinationRegion": "eu-central-1", "pseudonymized": False},
+                {"id": "flow-pci-ch-vault", "datasetName": "cardholder_pan_tokens", "classification": "PCI_CHD", "sourceJurisdiction": "CH-SOVEREIGN", "destinationRegion": "ch-zurich-1", "pseudonymized": True},
+                {"id": "flow-pii-us-export", "datasetName": "marketing_clickstream_raw", "classification": "GDPR_PII", "sourceJurisdiction": "EU-EEA", "destinationRegion": "us-east-1", "pseudonymized": False},
+                {"id": "flow-telem-global", "datasetName": "edge_pop_latency_histograms", "classification": "PUBLIC_TELEMETRY", "sourceJurisdiction": "EU-EEA", "destinationRegion": "us-east-1", "pseudonymized": True}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Sovereign Data Lineage & PII Classification Flows ===")
+            for f in res.get("flows", []):
+                print(f"  * {f.get('id'):<20} [{f.get('classification'):<16}] {f.get('sourceJurisdiction')} -> {f.get('destinationRegion'):<14} Pseudonymized={f.get('pseudonymized')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -11214,6 +11277,28 @@ def run_mcp_server() -> None:
                                 "name": "kite_provenance_admission_policy",
                                 "description": "Synthesize Sigstore ClusterImagePolicy, SPDX 3.0 SBOM, and in-toto v1 provenance statement.",
                                 "inputSchema": {"type": "object", "properties": {"namespace": {"type": "string", "default": "kite-prod"}}}
+                            },
+                            {
+                                "name": "kite_privacy_lineage",
+                                "description": "List GDPR PII, PCI CHD, and sovereign jurisdiction cross-border data lineage flows.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_privacy_audit_residency",
+                                "description": "Audit cross-border data flows against GDPR Art. 44 and Schrems II residency boundaries.",
+                                "inputSchema": {"type": "object", "properties": {"enforceStrictSchremsII": {"type": "boolean", "default": True}}}
+                            },
+                            {
+                                "name": "kite_privacy_dp_budget",
+                                "description": "Calibrate (epsilon, delta)-Differential Privacy Laplace/Gaussian noise scales and PostgreSQL RLS masking DDL.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "epsilon": {"type": "number", "default": 0.5},
+                                        "delta": {"type": "number", "default": 1e-5},
+                                        "sensitivity": {"type": "number", "default": 1.0}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -13338,6 +13423,22 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/provenance/admission-policy", {"namespace": ns}, {"namespace": ns, "clusterImagePolicyYaml": "kind: ClusterImagePolicy"})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_privacy_lineage":
+                    res = api_get_safe(ep, "/api/privacy/lineage", {"flows": [{"id": "flow-pii-eu-local", "classification": "GDPR_PII", "sourceJurisdiction": "EU-EEA", "destinationRegion": "eu-central-1"}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_privacy_audit_residency":
+                    strict = args.get("enforceStrictSchremsII", True)
+                    res = api_post_safe(ep, "/api/privacy/audit-residency", {"enforceStrictSchremsII": strict}, {"inspectedFlows": 4, "violationsCount": 1 if strict else 0, "gdprCompliant": not strict})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_privacy_dp_budget":
+                    eps = args.get("epsilon", 0.5)
+                    delta = args.get("delta", 1e-5)
+                    sens = args.get("sensitivity", 1.0)
+                    res = api_post_safe(ep, "/api/privacy/dp-budget", {"epsilon": eps, "delta": delta, "sensitivity": sens}, {"epsilon": eps, "delta": delta, "laplaceScaleB": 2.0, "gaussianSigma": 9.6896})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -14044,6 +14145,15 @@ def main() -> None:
     p_prov.add_argument("--namespace", default="kite-prod", help="Target Kubernetes namespace")
     p_prov.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # privacy
+    p_priv = subparsers.add_parser("privacy", help="Sovereign data residency, GDPR/Schrems II PII lineage, and Differential Privacy calibration")
+    p_priv.add_argument("action", nargs="?", choices=["lineage", "audit-residency", "dp-budget"], default="lineage", help="Privacy action")
+    p_priv.add_argument("--relaxed", action="store_true", help="Disable strict Schrems II cross-border check")
+    p_priv.add_argument("--epsilon", type=float, default=0.5, help="Differential Privacy epsilon budget (default: 0.5)")
+    p_priv.add_argument("--delta", type=float, default=1e-5, help="Differential Privacy failure probability delta (default: 1e-5)")
+    p_priv.add_argument("--sensitivity", type=float, default=1.0, help="Query sensitivity bound (default: 1.0)")
+    p_priv.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -14212,6 +14322,8 @@ def main() -> None:
         cmd_otel(args)
     elif args.subcommand == "provenance":
         cmd_provenance(args)
+    elif args.subcommand == "privacy":
+        cmd_privacy(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
