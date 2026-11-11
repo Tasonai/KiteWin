@@ -1068,6 +1068,56 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, edgeBundle);
                     break;
 
+                case "/api/dr/regions":
+                    var drRegions = DisasterRecoveryEngine.Instance.GetRegions();
+                    await WriteJsonResponseAsync(res, new { regions = drRegions });
+                    break;
+
+                case "/api/dr/failover":
+                    string outageRegion = "eu-central-1";
+                    double rpoTarget = 1.0;
+                    double rtoTarget = 30.0;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("outageRegionId", out var oProp))
+                                outageRegion = oProp.GetString() ?? outageRegion;
+                            if (doc.RootElement.TryGetProperty("rpoTargetSec", out var rpoProp) && rpoProp.TryGetDouble(out var rpoVal))
+                                rpoTarget = rpoVal;
+                            if (doc.RootElement.TryGetProperty("rtoTargetSec", out var rtoProp) && rtoProp.TryGetDouble(out var rtoVal))
+                                rtoTarget = rtoVal;
+                        }
+                        catch { }
+                    }
+                    var drSim = DisasterRecoveryEngine.Instance.SimulateRegionalBlackout(outageRegion, rpoTarget, rtoTarget);
+                    await WriteJsonResponseAsync(res, drSim);
+                    break;
+
+                case "/api/dr/runbook":
+                    double rbRpo = 1.0;
+                    double rbRto = 30.0;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("targetRpoSeconds", out var rpProp) && rpProp.TryGetDouble(out var rpVal))
+                                rbRpo = rpVal;
+                            if (doc.RootElement.TryGetProperty("targetRtoSeconds", out var rtProp) && rtProp.TryGetDouble(out var rtVal))
+                                rbRto = rtVal;
+                        }
+                        catch { }
+                    }
+                    var drRunbook = DisasterRecoveryEngine.Instance.GenerateFailoverRunbook(rbRpo, rbRto);
+                    await WriteJsonResponseAsync(res, drRunbook);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

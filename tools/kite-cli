@@ -9063,6 +9063,69 @@ def cmd_edge_mesh(args: argparse.Namespace) -> None:
                 print(f"  * [{p.get('iataCode')}] {p.get('city'):<12} ({p.get('region'):<13}) Cold-Start: {p.get('coldStartMs')}ms | Isolates: {p.get('activeIsolates')}")
 
 
+def cmd_dr(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "regions") or "regions"
+
+    if action == "failover":
+        outage = getattr(args, "outage_region", "eu-central-1") or "eu-central-1"
+        res = api_post_safe(ep, "/api/dr/failover", {"outageRegionId": outage, "rpoTargetSec": 1.0, "rtoTargetSec": 30.0}, {
+            "failedRegionId": outage,
+            "promotedPrimaryRegionId": "us-east-1",
+            "achievedRpoSeconds": 0.068,
+            "achievedRtoSeconds": 16.3,
+            "survivorQuorumVotes": 4,
+            "totalClusterVotes": 7,
+            "splitBrainPrevented": True,
+            "slaCompliant": True,
+            "timelineSteps": [
+                f"T+0.0s: Outage injected in {outage}; external synthetic probes detect 100% packet loss.",
+                f"T+9.0s: Anycast health check threshold breached; fencing STONITH lease token revoked for {outage}.",
+                "T+11.8s: Survivor consensus quorum verified (4/7 voters >= 4) with us-east-1 promoted to write primary.",
+                "T+16.3s: Global DNS/Anycast weights rebalanced 100% to healthy survivor regions; zero split-brain writes."
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Multi-Region Active-Active Blackout Failover Simulation ===")
+            print(f"Outage Region:     {res.get('failedRegionId')}")
+            print(f"Promoted Primary:  {res.get('promotedPrimaryRegionId')}")
+            print(f"Achieved RPO:      {res.get('achievedRpoSeconds')}s")
+            print(f"Achieved RTO:      {res.get('achievedRtoSeconds')}s")
+            print(f"Survivor Quorum:   {res.get('survivorQuorumVotes')}/{res.get('totalClusterVotes')} votes (Split-Brain Prevented: {res.get('splitBrainPrevented')})")
+            print(f"SLA Compliant:     {res.get('slaCompliant')}\n")
+            for step in res.get("timelineSteps", []):
+                print(f"  -> {step}")
+
+    elif action == "runbook":
+        res = api_post_safe(ep, "/api/dr/runbook", {"targetRpoSeconds": 1.0, "targetRtoSeconds": 30.0}, {
+            "targetRpoSeconds": 1.0,
+            "targetRtoSeconds": 30.0,
+            "dnsTrafficPolicyJson": "{\"StartRule\": \"GeoLatencyFailoverSwitch\"}",
+            "runbookMarkdown": "# Multi-Region Active-Active Automated Failover Runbook\n1. Revoke STONITH lease\n2. Promote survivor quorum"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("runbookMarkdown", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/dr/regions", {
+            "regions": [
+                {"regionId": "eu-central-1", "provider": "aws", "role": "active-primary", "replicationLagMs": 0.0, "trafficWeightPercent": 50, "votingVoters": 3, "isOnline": True},
+                {"regionId": "us-east-1", "provider": "aws", "role": "active-secondary", "replicationLagMs": 68.4, "trafficWeightPercent": 35, "votingVoters": 2, "isOnline": True},
+                {"regionId": "ap-northeast-1", "provider": "gcp-interconnect", "role": "witness-standby", "replicationLagMs": 142.0, "trafficWeightPercent": 15, "votingVoters": 2, "isOnline": True}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Multi-Region Active-Active DR Topology ===")
+            for r in res.get("regions", []):
+                print(f"  * {r.get('regionId'):<16} [{r.get('role'):<16}] Lag: {r.get('replicationLagMs'):>5.1f}ms | Weight: {r.get('trafficWeightPercent')}% | Voters: {r.get('votingVoters')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10238,6 +10301,32 @@ def run_mcp_server() -> None:
                                     "properties": {
                                         "workerName": {"type": "string", "default": "kite-auth-edge-gate"},
                                         "memoryLimitMb": {"type": "integer", "default": 64}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_dr_regions",
+                                "description": "Audit multi-region active-active replication lag, traffic weights, and consensus voters.",
+                                "inputSchema": {"type": "object", "properties": {"json": {"type": "boolean", "default": False}}}
+                            },
+                            {
+                                "name": "kite_dr_failover",
+                                "description": "Simulate regional cloud blackout, STONITH fencing, and survivor quorum RPO/RTO cutover.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "outageRegionId": {"type": "string", "default": "eu-central-1"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_dr_runbook",
+                                "description": "Synthesize Route53 failover policy JSON and automated multi-region SRE failover runbook.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "targetRpoSeconds": {"type": "number", "default": 1.0},
+                                        "targetRtoSeconds": {"type": "number", "default": 30.0}
                                     }
                                 }
                             }
@@ -12144,6 +12233,33 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     rendered = f"{res.get('witInterface', '')}\n---\n{res.get('spinManifestToml', '')}"
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
 
+                elif tool_name == "kite_dr_regions":
+                    res = api_get_safe(ep, "/api/dr/regions", {
+                        "regions": [
+                            {"regionId": "eu-central-1", "role": "active-primary", "replicationLagMs": 0.0, "votingVoters": 3},
+                            {"regionId": "us-east-1", "role": "active-secondary", "replicationLagMs": 68.4, "votingVoters": 2},
+                            {"regionId": "ap-northeast-1", "role": "witness-standby", "replicationLagMs": 142.0, "votingVoters": 2}
+                        ]
+                    })
+                    rendered = json.dumps(res, indent=2)
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_dr_failover":
+                    outage = args.get("outageRegionId", "eu-central-1")
+                    res = api_post_safe(ep, "/api/dr/failover", {"outageRegionId": outage}, {
+                        "failedRegionId": outage, "promotedPrimaryRegionId": "us-east-1", "achievedRpoSeconds": 0.068, "achievedRtoSeconds": 16.3, "slaCompliant": True
+                    })
+                    rendered = f"Failover {outage} -> {res.get('promotedPrimaryRegionId')} | RPO={res.get('achievedRpoSeconds')}s, RTO={res.get('achievedRtoSeconds')}s | Compliant={res.get('slaCompliant')}"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_dr_runbook":
+                    rpo = args.get("targetRpoSeconds", 1.0)
+                    rto = args.get("targetRtoSeconds", 30.0)
+                    res = api_post_safe(ep, "/api/dr/runbook", {"targetRpoSeconds": rpo, "targetRtoSeconds": rto}, {
+                        "runbookMarkdown": f"# DR Runbook (RPO<={rpo}s, RTO<={rto}s)"
+                    })
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": res.get("runbookMarkdown", "")}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12753,6 +12869,12 @@ def main() -> None:
     p_edgemesh.add_argument("--memory-mb", type=int, default=64, help="Isolate memory cap in MB")
     p_edgemesh.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # dr
+    p_dr = subparsers.add_parser("dr", help="Multi-region active-active disaster recovery, blackout game-day simulation, and failover runbook")
+    p_dr.add_argument("action", nargs="?", choices=["regions", "failover", "runbook"], default="regions", help="DR action (regions, failover, runbook)")
+    p_dr.add_argument("--outage-region", default="eu-central-1", help="Simulated outage cloud region")
+    p_dr.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -12895,6 +13017,8 @@ def main() -> None:
         cmd_ebpf(args)
     elif args.subcommand == "edge-mesh":
         cmd_edge_mesh(args)
+    elif args.subcommand == "dr":
+        cmd_dr(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
