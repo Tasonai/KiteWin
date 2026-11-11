@@ -1306,6 +1306,56 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, openSloBundle);
                     break;
 
+                case "/api/remediate/playbooks":
+                    var playbooks = AutoRemediationEngine.Instance.GetPlaybooks();
+                    await WriteJsonResponseAsync(res, new { playbooks });
+                    break;
+
+                case "/api/remediate/execute":
+                    string remSig = "ErrorBudgetFastBurn";
+                    string remTarget = "ledger-writer";
+                    int remBlast = 1;
+                    bool remDry = false;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("triggerSignal", out var tsProp))
+                                remSig = tsProp.GetString() ?? remSig;
+                            if (doc.RootElement.TryGetProperty("targetService", out var tgProp))
+                                remTarget = tgProp.GetString() ?? remTarget;
+                            if (doc.RootElement.TryGetProperty("estimatedBlastRadius", out var brProp) && brProp.TryGetInt32(out var brVal))
+                                remBlast = brVal;
+                            if (doc.RootElement.TryGetProperty("dryRun", out var drProp) && (drProp.ValueKind == JsonValueKind.True || drProp.ValueKind == JsonValueKind.False))
+                                remDry = drProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var remExec = AutoRemediationEngine.Instance.ExecutePlaybook(remSig, remTarget, remBlast, remDry);
+                    await WriteJsonResponseAsync(res, remExec);
+                    break;
+
+                case "/api/remediate/rollout-spec":
+                    string rolloutSvc = "ledger-writer";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("serviceName", out var snProp))
+                                rolloutSvc = snProp.GetString() ?? rolloutSvc;
+                        }
+                        catch { }
+                    }
+                    var rolloutSpec = AutoRemediationEngine.Instance.GenerateArgoRolloutSpec(rolloutSvc);
+                    await WriteJsonResponseAsync(res, rolloutSpec);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

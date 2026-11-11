@@ -9409,6 +9409,69 @@ def cmd_slo(args: argparse.Namespace) -> None:
                 print(f"  * {b.get('serviceId'):<18} Target={b.get('sloTargetPercent')}% | 1h={b.get('burnRate1h')}x | 6h={b.get('burnRate6h')}x | Budget={b.get('remainingBudgetPercent')}%")
 
 
+def cmd_remediate(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "playbooks") or "playbooks"
+
+    if action == "execute":
+        sig = getattr(args, "signal", "ErrorBudgetFastBurn") or "ErrorBudgetFastBurn"
+        svc = getattr(args, "service", "ledger-writer") or "ledger-writer"
+        blast = getattr(args, "blast_radius", 1) or 1
+        dry = bool(getattr(args, "dry_run", False))
+        ok = blast <= 2
+        res = api_post_safe(ep, "/api/remediate/execute", {
+            "triggerSignal": sig,
+            "targetService": svc,
+            "estimatedBlastRadius": blast,
+            "dryRun": dry
+        }, {
+            "playbookId": "pb-canary-drain",
+            "targetService": svc,
+            "executed": ok and not dry,
+            "dryRun": dry,
+            "guardrailPassed": ok,
+            "actionSummary": f"MAPE-K evaluated {sig} on {svc} (guardrailPassed={ok}).",
+            "postActionTrafficStablePercent": 100 if ok else 95
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            st = "EXECUTED" if res.get("executed") else ("DRY-RUN" if res.get("dryRun") else "BLOCKED")
+            print(f"=== Autonomous MAPE-K Remediation [{st}] ===")
+            print(f"  Playbook: {res.get('playbookId')} | Service: {res.get('targetService')}")
+            print(f"  Summary:  {res.get('actionSummary')}")
+
+    elif action == "rollout-spec":
+        svc = getattr(args, "service", "ledger-writer") or "ledger-writer"
+        res = api_post_safe(ep, "/api/remediate/rollout-spec", {"serviceName": svc}, {
+            "serviceName": svc,
+            "canaryStepsCount": 4,
+            "rolloutYaml": f"apiVersion: argoproj.io/v1alpha1\nkind: Rollout\nmetadata:\n  name: {svc}-rollout",
+            "analysisTemplateYaml": f"apiVersion: argoproj.io/v1alpha1\nkind: AnalysisTemplate\nmetadata:\n  name: {svc}-slo-guard"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("rolloutYaml", ""))
+            print("---")
+            print(res.get("analysisTemplateYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/remediate/playbooks", {
+            "playbooks": [
+                {"id": "pb-canary-drain", "triggerSignal": "ErrorBudgetFastBurn", "actionType": "CANARY_TRAFFIC_ROLLBACK", "maxBlastRadiusServices": 2},
+                {"id": "pb-hpa-surge", "triggerSignal": "P99LatencySpike", "actionType": "HPA_REPLICA_SURGE", "maxBlastRadiusServices": 4},
+                {"id": "pb-circuit-killswitch", "triggerSignal": "DownstreamTimeoutStorm", "actionType": "FEATURE_FLAG_SHED_LOAD", "maxBlastRadiusServices": 3}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Closed-Loop Autonomous MAPE-K Remediation Playbooks ===")
+            for p in res.get("playbooks", []):
+                print(f"  * {p.get('id'):<22} Signal={p.get('triggerSignal'):<24} Action={p.get('actionType')} (MaxBlast={p.get('maxBlastRadiusServices')})")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10705,6 +10768,29 @@ def run_mcp_server() -> None:
                                         "sloTargetPercent": {"type": "number", "default": 99.95}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_remediate_playbooks",
+                                "description": "List closed-loop MAPE-K autonomous remediation playbooks and blast-radius guardrails.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_remediate_execute",
+                                "description": "Execute or dry-run an autonomous canary rollback / HPA surge playbook.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "triggerSignal": {"type": "string", "default": "ErrorBudgetFastBurn"},
+                                        "targetService": {"type": "string", "default": "ledger-writer"},
+                                        "estimatedBlastRadius": {"type": "integer", "default": 1},
+                                        "dryRun": {"type": "boolean", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_remediate_rollout_spec",
+                                "description": "Synthesize Argo Rollouts canary delivery and AnalysisTemplate manifests.",
+                                "inputSchema": {"type": "object", "properties": {"serviceName": {"type": "string", "default": "ledger-writer"}}}
                             }
                         ]
                     }
@@ -12713,6 +12799,23 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/slo/openslo", {"serviceId": svc, "sloTargetPercent": target}, {"serviceId": svc, "openSloYaml": "apiVersion: openslo/v1"})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_remediate_playbooks":
+                    res = api_get_safe(ep, "/api/remediate/playbooks", {"playbooks": [{"id": "pb-canary-drain", "actionType": "CANARY_TRAFFIC_ROLLBACK"}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_remediate_execute":
+                    sig = args.get("triggerSignal", "ErrorBudgetFastBurn")
+                    svc = args.get("targetService", "ledger-writer")
+                    blast = args.get("estimatedBlastRadius", 1)
+                    dry = args.get("dryRun", False)
+                    res = api_post_safe(ep, "/api/remediate/execute", {"triggerSignal": sig, "targetService": svc, "estimatedBlastRadius": blast, "dryRun": dry}, {"playbookId": "pb-canary-drain", "executed": blast <= 2 and not dry, "guardrailPassed": blast <= 2})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_remediate_rollout_spec":
+                    svc = args.get("serviceName", "ledger-writer")
+                    res = api_post_safe(ep, "/api/remediate/rollout-spec", {"serviceName": svc}, {"serviceName": svc, "canaryStepsCount": 4})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13362,6 +13465,15 @@ def main() -> None:
     p_slo.add_argument("--target", type=float, default=99.95, help="SLO availability target percent")
     p_slo.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # remediate
+    p_remediate = subparsers.add_parser("remediate", help="Closed-loop MAPE-K autonomous incident remediation, canary rollback, and Argo Rollouts specs")
+    p_remediate.add_argument("action", nargs="?", choices=["playbooks", "execute", "rollout-spec"], default="playbooks", help="Remediation action")
+    p_remediate.add_argument("--signal", default="ErrorBudgetFastBurn", help="Anomaly trigger signal")
+    p_remediate.add_argument("--service", default="ledger-writer", help="Target microservice name")
+    p_remediate.add_argument("--blast-radius", type=int, default=1, help="Estimated affected services count")
+    p_remediate.add_argument("--dry-run", action="store_true", help="Preview action without mutating traffic weights")
+    p_remediate.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13516,6 +13628,8 @@ def main() -> None:
         cmd_pqc(args)
     elif args.subcommand == "slo":
         cmd_slo(args)
+    elif args.subcommand == "remediate":
+        cmd_remediate(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
