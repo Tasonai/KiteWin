@@ -1018,6 +1018,56 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, ebpfBundle);
                     break;
 
+                case "/api/edge-mesh/pops":
+                    var pops = WasmEdgeMeshEngine.Instance.GetGlobalPops();
+                    await WriteJsonResponseAsync(res, new { pops });
+                    break;
+
+                case "/api/edge-mesh/route":
+                    double clientLat = 52.5200;
+                    double clientLon = 13.4050;
+                    string consistencyTier = "bounded-staleness-50ms";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("latitude", out var latProp) && latProp.TryGetDouble(out var latVal))
+                                clientLat = latVal;
+                            if (doc.RootElement.TryGetProperty("longitude", out var lonProp) && lonProp.TryGetDouble(out var lonVal))
+                                clientLon = lonVal;
+                            if (doc.RootElement.TryGetProperty("consistencyTier", out var cProp))
+                                consistencyTier = cProp.GetString() ?? consistencyTier;
+                        }
+                        catch { }
+                    }
+                    var routeDecision = WasmEdgeMeshEngine.Instance.ComputeOptimalRoute(clientLat, clientLon, consistencyTier);
+                    await WriteJsonResponseAsync(res, routeDecision);
+                    break;
+
+                case "/api/edge-mesh/bundle":
+                    string workerName = "kite-auth-edge-gate";
+                    int memLimitMb = 64;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("workerName", out var wProp))
+                                workerName = wProp.GetString() ?? workerName;
+                            if (doc.RootElement.TryGetProperty("memoryLimitMb", out var mProp) && mProp.TryGetInt32(out var mVal))
+                                memLimitMb = mVal;
+                        }
+                        catch { }
+                    }
+                    var edgeBundle = WasmEdgeMeshEngine.Instance.GenerateEdgeBundle(workerName, memLimitMb);
+                    await WriteJsonResponseAsync(res, edgeBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

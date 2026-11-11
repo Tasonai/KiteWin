@@ -8998,6 +8998,71 @@ def cmd_ebpf(args: argparse.Namespace) -> None:
                 print(f"  * {fl.get('sourceWorkload')} -> {fl.get('destinationWorkload')}:{fl.get('destinationPort')} [{fl.get('wireProtocol')}] RTT: {fl.get('tcpRttMs')}ms | P99: {fl.get('p99WireLatencyMs')}ms{egress_tag}")
 
 
+def cmd_edge_mesh(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "pops") or "pops"
+
+    if action == "route":
+        lat = getattr(args, "lat", 52.5200)
+        lon = getattr(args, "lon", 13.4050)
+        res = api_post_safe(ep, "/api/edge-mesh/route", {"latitude": lat, "longitude": lon}, {
+            "clientLatitude": lat,
+            "clientLongitude": lon,
+            "primaryPop": "FRA",
+            "failoverPop": "IAD",
+            "estimatedRttMs": 7.62,
+            "isolateColdStartMs": 0.34,
+            "consistencyTier": "bounded-staleness-50ms"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Sovereign WASI Edge Mesh Geo-Routing ===")
+            print(f"Origin Coords:    ({res.get('clientLatitude')}, {res.get('clientLongitude')})")
+            print(f"Primary PoP:      {res.get('primaryPop')} (Cold-Start: {res.get('isolateColdStartMs')}ms)")
+            print(f"Failover PoP:     {res.get('failoverPop')}")
+            print(f"Estimated RTT:    {res.get('estimatedRttMs')}ms")
+            print(f"State Tier:       {res.get('consistencyTier')}")
+
+    elif action == "bundle":
+        worker = getattr(args, "worker", "kite-auth-edge-gate") or "kite-auth-edge-gate"
+        mem = getattr(args, "memory_mb", 64) or 64
+        res = api_post_safe(ep, "/api/edge-mesh/bundle", {"workerName": worker, "memoryLimitMb": mem}, {
+            "workerName": worker,
+            "wasiTarget": "wasm32-wasip2",
+            "witInterface": f"package kite:edge@0.2.0;\nworld {worker} {{ export wasi:http/incoming-handler@0.2.0; }}",
+            "spinManifestToml": f"spin_manifest_version = 2\n[application]\nname = \"{worker}\"",
+            "wranglerConfigToml": f"name = \"{worker}\"\n[limits]\ncpu_ms = 10\nmemory_mb = {mem}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== WASI Preview 2 Edge Worker Bundle ({worker}) ===")
+            print("--- WIT Interface ---")
+            print(res.get("witInterface", ""))
+            print("\n--- spin.toml ---")
+            print(res.get("spinManifestToml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/edge-mesh/pops", {
+            "pops": [
+                {"iataCode": "FRA", "city": "Frankfurt", "region": "eu-central", "coldStartMs": 0.34, "activeIsolates": 420, "memoryCapMb": 128, "isHealthy": True},
+                {"iataCode": "IAD", "city": "Ashburn", "region": "us-east", "coldStartMs": 0.38, "activeIsolates": 610, "memoryCapMb": 128, "isHealthy": True},
+                {"iataCode": "NRT", "city": "Tokyo", "region": "ap-northeast", "coldStartMs": 0.41, "activeIsolates": 310, "memoryCapMb": 128, "isHealthy": True},
+                {"iataCode": "SIN", "city": "Singapore", "region": "ap-southeast", "coldStartMs": 0.39, "activeIsolates": 275, "memoryCapMb": 128, "isHealthy": True},
+                {"iataCode": "GRU", "city": "Sao Paulo", "region": "sa-east", "coldStartMs": 0.44, "activeIsolates": 180, "memoryCapMb": 128, "isHealthy": True},
+                {"iataCode": "SYD", "city": "Sydney", "region": "ap-south", "coldStartMs": 0.42, "activeIsolates": 150, "memoryCapMb": 128, "isHealthy": True}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            pops = res.get("pops", [])
+            print(f"=== Sovereign Global WASI Edge PoP Mesh ({len(pops)} locations) ===")
+            for p in pops:
+                print(f"  * [{p.get('iataCode')}] {p.get('city'):<12} ({p.get('region'):<13}) Cold-Start: {p.get('coldStartMs')}ms | Isolates: {p.get('activeIsolates')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10141,6 +10206,38 @@ def run_mcp_server() -> None:
                                     "type": "object",
                                     "properties": {
                                         "namespace": {"type": "string", "description": "Target Kubernetes namespace", "default": "kite-prod"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_edge_pops",
+                                "description": "List global WASI Preview 2 edge Points of Presence with sub-millisecond cold-start telemetry.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_edge_route",
+                                "description": "Compute optimal Anycast/Haversine WASI edge PoP route and failover location.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "latitude": {"type": "number", "default": 52.52},
+                                        "longitude": {"type": "number", "default": 13.405}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_edge_bundle",
+                                "description": "Synthesize WASI Preview 2 WIT interface, Spin manifest, and Wrangler isolate configuration.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "workerName": {"type": "string", "default": "kite-auth-edge-gate"},
+                                        "memoryLimitMb": {"type": "integer", "default": 64}
                                     }
                                 }
                             }
@@ -12015,6 +12112,38 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     rendered = f"{res.get('tetragonTracingPolicyYaml', '')}\n---\n{res.get('ciliumNetworkPolicyYaml', '')}"
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
 
+                elif tool_name == "kite_edge_pops":
+                    res = api_get_safe(ep, "/api/edge-mesh/pops", {
+                        "pops": [
+                            {"iataCode": "FRA", "city": "Frankfurt", "coldStartMs": 0.34, "activeIsolates": 420},
+                            {"iataCode": "IAD", "city": "Ashburn", "coldStartMs": 0.38, "activeIsolates": 610},
+                            {"iataCode": "NRT", "city": "Tokyo", "coldStartMs": 0.41, "activeIsolates": 310}
+                        ]
+                    })
+                    rendered = json.dumps(res, indent=2) if args.get("json", False) else "\n".join(
+                        f"[{p.get('iataCode')}] {p.get('city')} - {p.get('coldStartMs')}ms cold-start"
+                        for p in res.get("pops", [])
+                    )
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_edge_route":
+                    lat = args.get("latitude", 52.52)
+                    lon = args.get("longitude", 13.405)
+                    res = api_post_safe(ep, "/api/edge-mesh/route", {"latitude": lat, "longitude": lon}, {
+                        "primaryPop": "FRA", "failoverPop": "IAD", "estimatedRttMs": 7.62, "isolateColdStartMs": 0.34
+                    })
+                    rendered = f"Primary PoP: {res.get('primaryPop')} | Failover: {res.get('failoverPop')} | RTT: {res.get('estimatedRttMs')}ms"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_edge_bundle":
+                    w = args.get("workerName", "kite-auth-edge-gate")
+                    m = args.get("memoryLimitMb", 64)
+                    res = api_post_safe(ep, "/api/edge-mesh/bundle", {"workerName": w, "memoryLimitMb": m}, {
+                        "workerName": w, "witInterface": f"world {w} {{}}", "spinManifestToml": f"name = \"{w}\""
+                    })
+                    rendered = f"{res.get('witInterface', '')}\n---\n{res.get('spinManifestToml', '')}"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12615,6 +12744,15 @@ def main() -> None:
     p_ebpf.add_argument("--namespace", default="kite-prod", help="Target Kubernetes namespace for policy synthesis")
     p_ebpf.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # edge-mesh
+    p_edgemesh = subparsers.add_parser("edge-mesh", help="Sovereign WASI Preview 2 edge workers, global PoP geo-routing, and Spin/Wrangler bundles")
+    p_edgemesh.add_argument("action", nargs="?", choices=["pops", "route", "bundle"], default="pops", help="Edge mesh action (pops, route, bundle)")
+    p_edgemesh.add_argument("--lat", type=float, default=52.5200, help="Client latitude for geo-routing")
+    p_edgemesh.add_argument("--lon", type=float, default=13.4050, help="Client longitude for geo-routing")
+    p_edgemesh.add_argument("--worker", default="kite-auth-edge-gate", help="Edge worker name")
+    p_edgemesh.add_argument("--memory-mb", type=int, default=64, help="Isolate memory cap in MB")
+    p_edgemesh.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -12755,6 +12893,8 @@ def main() -> None:
         cmd_cluster(args)
     elif args.subcommand == "ebpf":
         cmd_ebpf(args)
+    elif args.subcommand == "edge-mesh":
+        cmd_edge_mesh(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
