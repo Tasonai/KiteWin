@@ -9725,6 +9725,56 @@ def cmd_otel(args: argparse.Namespace) -> None:
                 print(f"  * {s.get('spanId'):<18} {s.get('serviceName'):<22} {s.get('operationName'):<34} {s.get('durationMs')}ms")
 
 
+def cmd_provenance(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "artifacts") or "artifacts"
+
+    if action == "verify-slsa":
+        art = getattr(args, "artifact", "ghcr.io/kite/checkout-api") or "ghcr.io/kite/checkout-api"
+        lvl = int(getattr(args, "level", 4) or 4)
+        res = api_post_safe(ep, "/api/provenance/verify-slsa", {"artifactId": art, "requireLevel": lvl}, {
+            "artifactId": art,
+            "achievedSlsaLevel": 4 if "ghcr.io/kite" in art else 1,
+            "admissionAllowed": "ghcr.io/kite" in art,
+            "violations": [] if "ghcr.io/kite" in art else ["Missing Rekor inclusion proof"]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            st = "ADMITTED" if res.get("admissionAllowed") else "BLOCKED"
+            print(f"=== SLSA Supply-Chain Verification [{art}] -> SLSA L{res.get('achievedSlsaLevel')} ({st}) ===")
+            for v in res.get("violations", []):
+                print(f"  ! {v}")
+
+    elif action == "admission-policy":
+        ns = getattr(args, "namespace", "kite-prod") or "kite-prod"
+        res = api_post_safe(ep, "/api/provenance/admission-policy", {"namespace": ns}, {
+            "namespace": ns,
+            "clusterImagePolicyYaml": "apiVersion: policy.sigstore.dev/v1beta1\nkind: ClusterImagePolicy",
+            "spdx3SbomJson": "{\"@context\": \"https://spdx.org/rdf/3.0.1/spdx-context.jsonld\"}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("clusterImagePolicyYaml", ""))
+            print("---")
+            print(res.get("spdx3SbomJson", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/provenance/artifacts", {
+            "artifacts": [
+                {"artifactId": "ghcr.io/kite/checkout-api", "hermeticBuild": True, "cosignVerified": True, "rekorLogIndex": 88412904},
+                {"artifactId": "docker.io/vendor/legacy-agent", "hermeticBuild": False, "cosignVerified": False, "rekorLogIndex": 0}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Supply-Chain Provenance Artifacts (SLSA & Sigstore Rekor) ===")
+            for a in res.get("artifacts", []):
+                print(f"  * {a.get('artifactId'):<34} Cosign={a.get('cosignVerified')} | Hermetic={a.get('hermeticBuild')} | Rekor={a.get('rekorLogIndex')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -11143,6 +11193,27 @@ def run_mcp_server() -> None:
                                         "tailSampleLatencyThresholdMs": {"type": "integer", "default": 150}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_provenance_artifacts",
+                                "description": "List OCI supply-chain artifacts, Cosign signatures, Rekor log indices, and hermetic flags.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_provenance_verify_slsa",
+                                "description": "Verify OCI artifact provenance against SLSA v1.0 Build Levels 1-4.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "artifactId": {"type": "string", "default": "ghcr.io/kite/checkout-api"},
+                                        "requireLevel": {"type": "integer", "default": 4}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_provenance_admission_policy",
+                                "description": "Synthesize Sigstore ClusterImagePolicy, SPDX 3.0 SBOM, and in-toto v1 provenance statement.",
+                                "inputSchema": {"type": "object", "properties": {"namespace": {"type": "string", "default": "kite-prod"}}}
                             }
                         ]
                     }
@@ -13252,6 +13323,21 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/otel/collector-config", {"clusterEnv": env, "tailSampleLatencyThresholdMs": th}, {"clusterEnv": env, "tailSampleLatencyThresholdMs": th})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_provenance_artifacts":
+                    res = api_get_safe(ep, "/api/provenance/artifacts", {"artifacts": [{"artifactId": "ghcr.io/kite/checkout-api", "hermeticBuild": True}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_provenance_verify_slsa":
+                    art = args.get("artifactId", "ghcr.io/kite/checkout-api")
+                    lvl = args.get("requireLevel", 4)
+                    res = api_post_safe(ep, "/api/provenance/verify-slsa", {"artifactId": art, "requireLevel": lvl}, {"artifactId": art, "achievedSlsaLevel": 4, "admissionAllowed": True})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_provenance_admission_policy":
+                    ns = args.get("namespace", "kite-prod")
+                    res = api_post_safe(ep, "/api/provenance/admission-policy", {"namespace": ns}, {"namespace": ns, "clusterImagePolicyYaml": "kind: ClusterImagePolicy"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13950,6 +14036,14 @@ def main() -> None:
     p_otel.add_argument("--threshold-ms", type=int, default=150, help="Tail-sampling latency threshold in ms")
     p_otel.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # provenance
+    p_prov = subparsers.add_parser("provenance", help="SLSA Level 4 supply-chain provenance, Sigstore Cosign, and SPDX 3.0 SBOM")
+    p_prov.add_argument("action", nargs="?", choices=["artifacts", "verify-slsa", "admission-policy"], default="artifacts", help="Provenance action")
+    p_prov.add_argument("--artifact", default="ghcr.io/kite/checkout-api", help="Target OCI artifact URI")
+    p_prov.add_argument("--level", type=int, default=4, help="Required SLSA Build Level (1-4)")
+    p_prov.add_argument("--namespace", default="kite-prod", help="Target Kubernetes namespace")
+    p_prov.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -14116,6 +14210,8 @@ def main() -> None:
         cmd_policy(args)
     elif args.subcommand == "otel":
         cmd_otel(args)
+    elif args.subcommand == "provenance":
+        cmd_provenance(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

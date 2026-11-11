@@ -1552,6 +1552,50 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, otelCfg);
                     break;
 
+                case "/api/provenance/artifacts":
+                    var provArts = SupplyChainProvenanceEngine.Instance.GetArtifacts();
+                    await WriteJsonResponseAsync(res, new { artifacts = provArts });
+                    break;
+
+                case "/api/provenance/verify-slsa":
+                    string provArt = "ghcr.io/kite/checkout-api";
+                    int provLvl = 4;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("artifactId", out var aProp))
+                                provArt = aProp.GetString() ?? provArt;
+                            if (doc.RootElement.TryGetProperty("requireLevel", out var lProp) && lProp.TryGetInt32(out var lVal))
+                                provLvl = lVal;
+                        }
+                        catch { }
+                    }
+                    var slsaRep = SupplyChainProvenanceEngine.Instance.VerifySlsaCompliance(provArt, provLvl);
+                    await WriteJsonResponseAsync(res, slsaRep);
+                    break;
+
+                case "/api/provenance/admission-policy":
+                    string provNs = "kite-prod";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("namespace", out var nProp))
+                                provNs = nProp.GetString() ?? provNs;
+                        }
+                        catch { }
+                    }
+                    var admBundle = SupplyChainProvenanceEngine.Instance.SynthesizeAdmissionBundle(provNs);
+                    await WriteJsonResponseAsync(res, admBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
