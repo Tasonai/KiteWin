@@ -1118,6 +1118,47 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, drRunbook);
                     break;
 
+                case "/api/finops/report":
+                    var workloads = FinOpsCarbonEngine.Instance.GetWorkloads();
+                    await WriteJsonResponseAsync(res, new { workloads });
+                    break;
+
+                case "/api/finops/arbitrage":
+                    bool allowSpot = true;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("allowSpotForStateless", out var spProp) && (spProp.ValueKind == JsonValueKind.True || spProp.ValueKind == JsonValueKind.False))
+                                allowSpot = spProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var arbReport = FinOpsCarbonEngine.Instance.ComputeArbitrage(allowSpot);
+                    await WriteJsonResponseAsync(res, arbReport);
+                    break;
+
+                case "/api/finops/green-schedule":
+                    int maxCarbon = 80;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("maxCarbonThresholdGco2", out var mcProp) && mcProp.TryGetInt32(out var mcVal))
+                                maxCarbon = mcVal;
+                        }
+                        catch { }
+                    }
+                    var greenBundle = FinOpsCarbonEngine.Instance.GenerateGreenSchedule(maxCarbon);
+                    await WriteJsonResponseAsync(res, greenBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

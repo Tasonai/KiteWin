@@ -9126,6 +9126,65 @@ def cmd_dr(args: argparse.Namespace) -> None:
                 print(f"  * {r.get('regionId'):<16} [{r.get('role'):<16}] Lag: {r.get('replicationLagMs'):>5.1f}ms | Weight: {r.get('trafficWeightPercent')}% | Voters: {r.get('votingVoters')}")
 
 
+def cmd_finops(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "report") or "report"
+
+    if action == "arbitrage":
+        res = api_post_safe(ep, "/api/finops/arbitrage", {"allowSpotForStateless": True}, {
+            "totalCurrentMonthlyUsd": 12900.0,
+            "totalProjectedMonthlyUsd": 6948.4,
+            "totalMonthlySavingsUsd": 5951.6,
+            "savingsPercent": 46.1,
+            "recommendations": [
+                {"workloadId": "api-core-fleet", "currentMonthlyUsd": 4800.0, "projectedMonthlyUsd": 2592.0, "monthlySavingsUsd": 2208.0, "strategy": "Migrate x86_64 to ARM64 Graviton4/Axion (-28%); Right-size underutilized vCPUs (<40% avg)"},
+                {"workloadId": "ml-embedding-batch", "currentMonthlyUsd": 6200.0, "projectedMonthlyUsd": 2455.2, "monthlySavingsUsd": 3744.8, "strategy": "Migrate x86_64 to ARM64 Graviton4/Axion (-28%); Shift fault-tolerant batch pool to Spot capacity (-45%)"}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== FinOps Multi-Cloud ARM64 & Spot Arbitrage Plan ===")
+            print(f"Current Monthly Spend:   ${res.get('totalCurrentMonthlyUsd'):,.2f}")
+            print(f"Projected Optimized:     ${res.get('totalProjectedMonthlyUsd'):,.2f}")
+            print(f"Total Monthly Savings:   ${res.get('totalMonthlySavingsUsd'):,.2f} ({res.get('savingsPercent')}%)\n")
+            for rec in res.get("recommendations", []):
+                print(f"  * {rec.get('workloadId')}: Save ${rec.get('monthlySavingsUsd'):,.2f}/mo")
+                print(f"    Strategy: {rec.get('strategy')}")
+
+    elif action == "green-schedule":
+        max_c = getattr(args, "max_carbon", 80) or 80
+        res = api_post_safe(ep, "/api/finops/green-schedule", {"maxCarbonThresholdGco2": max_c}, {
+            "optimalLowCarbonRegion": "eu-north-1",
+            "optimalCarbonGco2PerKwh": 28,
+            "carbonReductionPercent": 88.1,
+            "karpenterNodePoolYaml": "apiVersion: karpenter.sh/v1\nkind: NodePool\nmetadata:\n  name: kite-arm64-finops-pool",
+            "kedaCarbonScalerYaml": f"apiVersion: keda.sh/v1alpha1\nkind: ScaledObject\nmetadata:\n  name: kite-carbon-aware-batch-scaler"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Carbon-Aware Green Grid Scheduler ===")
+            print(f"Optimal Hydro/Nuclear Region: {res.get('optimalLowCarbonRegion')} ({res.get('optimalCarbonGco2PerKwh')} gCO2eq/kWh)")
+            print(f"Estimated Carbon Reduction:   {res.get('carbonReductionPercent')}%\n")
+            print(res.get("karpenterNodePoolYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/finops/report", {
+            "workloads": [
+                {"workloadId": "api-core-fleet", "provider": "aws", "region": "eu-central-1", "instanceFamily": "m6i.4xlarge", "architecture": "x86_64", "monthlyCostUsd": 4800.0, "gridCarbonGco2PerKwh": 315},
+                {"workloadId": "ml-embedding-batch", "provider": "aws", "region": "us-east-1", "instanceFamily": "g5.2xlarge", "architecture": "x86_64", "monthlyCostUsd": 6200.0, "gridCarbonGco2PerKwh": 365},
+                {"workloadId": "analytics-warehouse-workers", "provider": "gcp", "region": "eu-north-1", "instanceFamily": "t2a-standard-8", "architecture": "arm64", "monthlyCostUsd": 1900.0, "gridCarbonGco2PerKwh": 28}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Multi-Cloud FinOps & Grid Carbon Telemetry ===")
+            for w in res.get("workloads", []):
+                print(f"  * {w.get('workloadId'):<28} [{w.get('provider')}:{w.get('region')}] ${w.get('monthlyCostUsd'):>7,.2f}/mo | {w.get('gridCarbonGco2PerKwh')} gCO2/kWh")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10329,6 +10388,21 @@ def run_mcp_server() -> None:
                                         "targetRtoSeconds": {"type": "number", "default": 30.0}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_finops_report",
+                                "description": "Query multi-cloud compute unit economics and regional electricity carbon intensity.",
+                                "inputSchema": {"type": "object", "properties": {"json": {"type": "boolean", "default": False}}}
+                            },
+                            {
+                                "name": "kite_finops_arbitrage",
+                                "description": "Compute ARM64 Graviton/Axion right-sizing and Spot instance cost arbitrage plan.",
+                                "inputSchema": {"type": "object", "properties": {"allowSpotForStateless": {"type": "boolean", "default": True}}}
+                            },
+                            {
+                                "name": "kite_finops_green_schedule",
+                                "description": "Synthesize Karpenter ARM64 NodePool and KEDA carbon-aware batch workload scaler.",
+                                "inputSchema": {"type": "object", "properties": {"maxCarbonThresholdGco2": {"type": "integer", "default": 80}}}
                             }
                         ]
                     }
@@ -12260,6 +12334,26 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     })
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": res.get("runbookMarkdown", "")}]}})
 
+                elif tool_name == "kite_finops_report":
+                    res = api_get_safe(ep, "/api/finops/report", {"workloads": [{"workloadId": "api-core-fleet", "monthlyCostUsd": 4800.0, "gridCarbonGco2PerKwh": 315}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_finops_arbitrage":
+                    spot = args.get("allowSpotForStateless", True)
+                    res = api_post_safe(ep, "/api/finops/arbitrage", {"allowSpotForStateless": spot}, {
+                        "totalCurrentMonthlyUsd": 12900.0, "totalProjectedMonthlyUsd": 6948.4, "totalMonthlySavingsUsd": 5951.6, "savingsPercent": 46.1
+                    })
+                    rendered = f"FinOps Savings: ${res.get('totalMonthlySavingsUsd')}/mo ({res.get('savingsPercent')}%)"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_finops_green_schedule":
+                    mc = args.get("maxCarbonThresholdGco2", 80)
+                    res = api_post_safe(ep, "/api/finops/green-schedule", {"maxCarbonThresholdGco2": mc}, {
+                        "optimalLowCarbonRegion": "eu-north-1", "optimalCarbonGco2PerKwh": 28, "carbonReductionPercent": 88.1
+                    })
+                    rendered = f"Optimal Green Region: {res.get('optimalLowCarbonRegion')} ({res.get('optimalCarbonGco2PerKwh')} gCO2/kWh, -{res.get('carbonReductionPercent')}%)"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12875,6 +12969,12 @@ def main() -> None:
     p_dr.add_argument("--outage-region", default="eu-central-1", help="Simulated outage cloud region")
     p_dr.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # finops
+    p_finops = subparsers.add_parser("finops", help="Multi-cloud FinOps ARM64/Spot cost arbitrage and carbon-aware green scheduler")
+    p_finops.add_argument("action", nargs="?", choices=["report", "arbitrage", "green-schedule"], default="report", help="FinOps action (report, arbitrage, green-schedule)")
+    p_finops.add_argument("--max-carbon", type=int, default=80, help="Max electricity carbon intensity threshold (gCO2eq/kWh)")
+    p_finops.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13019,6 +13119,8 @@ def main() -> None:
         cmd_edge_mesh(args)
     elif args.subcommand == "dr":
         cmd_dr(args)
+    elif args.subcommand == "finops":
+        cmd_finops(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
