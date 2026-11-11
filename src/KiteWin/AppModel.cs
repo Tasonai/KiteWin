@@ -19,6 +19,7 @@ public enum SidebarPage
     Completed,
     Starred,
     Canvas,
+    Hyperscale,
     Translator,
     Skills,
     Sync
@@ -35,6 +36,7 @@ public static class SidebarPages
         SidebarPage.Completed => "Готово",
         SidebarPage.Starred => "Избранное",
         SidebarPage.Canvas => "Холст топологии",
+        SidebarPage.Hyperscale => "Гиперскейл и 3D",
         SidebarPage.Translator => "Промпт-переводчик",
         SidebarPage.Skills => "База скиллов",
         SidebarPage.Sync => "Синхронизация P2P",
@@ -51,6 +53,7 @@ public static class SidebarPages
         SidebarPage.Completed => 0xE73E,    // Checkmark
         SidebarPage.Starred => 0xE735,      // FavoriteStarFill
         SidebarPage.Canvas => 0xE746,       // ViewAll / Canvas Grid
+        SidebarPage.Hyperscale => 0xE9D9,   // Diagnostics / Hyperscale Mesh
         SidebarPage.Translator => 0xE70F,   // Edit
         SidebarPage.Skills => 0xE950,       // DeveloperTools
         SidebarPage.Sync => 0xE895,         // Sync

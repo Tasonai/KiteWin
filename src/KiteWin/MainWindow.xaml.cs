@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
         Nav.MenuItems.Add(new NavigationViewItemSeparator());
         Nav.MenuItems.Add(new NavigationViewItemHeader { Content = "Архитектура и синтез" });
         AddMenuItem(SidebarPage.Canvas);
+        AddMenuItem(SidebarPage.Hyperscale);
         AddMenuItem(SidebarPage.Translator);
         AddMenuItem(SidebarPage.Skills);
 
@@ -156,6 +157,11 @@ public sealed partial class MainWindow : Window
                 case SidebarPage.Canvas:
                     if (ContentFrame.Content is not CanvasPage)
                         ContentFrame.Navigate(typeof(CanvasPage), null, transition);
+                    break;
+
+                case SidebarPage.Hyperscale:
+                    if (ContentFrame.Content is not HyperscalePage)
+                        ContentFrame.Navigate(typeof(HyperscalePage), null, transition);
                     break;
 
                 case SidebarPage.Translator:

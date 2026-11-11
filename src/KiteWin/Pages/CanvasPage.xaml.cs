@@ -1043,6 +1043,11 @@ public sealed partial class CanvasPage : Page
         RenderCanvas();
     }
 
+    private void OnHyperscaleInspectorClicked(object sender, RoutedEventArgs e)
+    {
+        Frame?.Navigate(typeof(HyperscalePage));
+    }
+
     private static Windows.UI.Color ColorFromHex(string hex, double opacity = 1.0)
     {
         var clean = hex.TrimStart('#');

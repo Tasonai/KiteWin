@@ -1403,6 +1403,11 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, fedCatalog);
                     break;
 
+                case "/api/hyperscale/cockpit":
+                    var cockpitSnap = HyperscaleCockpitAggregator.Instance.CaptureSnapshot();
+                    await WriteJsonResponseAsync(res, cockpitSnap);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

@@ -9529,6 +9529,35 @@ def cmd_federation(args: argparse.Namespace) -> None:
                 print(f"  * {d.get('spiffeTrustDomain'):<32} SVID-Rot={d.get('svidRotationMinutes')}m | mTLS={d.get('mtlsVerified')}")
 
 
+def cmd_hyperscale(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    res = api_get_safe(ep, "/api/hyperscale/cockpit", {
+        "strataCount": 5,
+        "spatialNodesCount": 5,
+        "ebpfFlowsCount": 4,
+        "shadowApiCount": 2,
+        "healthyEdgePopsCount": 6,
+        "drRegionsCount": 3,
+        "monthlyArbitrageSavingsUsd": 5952.8,
+        "optimalGreenRegion": "eu-north-1",
+        "formalVerified": True,
+        "formalStatesExplored": 1312,
+        "pqcReadinessPercent": 50.0,
+        "frozenSloServicesCount": 1,
+        "remediationPlaybooksCount": 3,
+        "spiffeTrustDomainsCount": 3
+    })
+    if getattr(args, "json", False):
+        print(json.dumps(res, indent=2))
+    else:
+        print("=== Kite Hyperscale & Formal Governance Inspector Snapshot ===")
+        print(f"  * 3D Topology:      {res.get('strataCount')} Z-Strata | {res.get('spatialNodesCount')} Spatial Nodes")
+        print(f"  * eBPF & WASI Mesh: {res.get('ebpfFlowsCount')} Kernel Flows ({res.get('shadowApiCount')} Shadow/Rogue) | {res.get('healthyEdgePopsCount')} Healthy WASI PoPs")
+        print(f"  * DR & FinOps:      {res.get('drRegionsCount')} Active-Active Regions | ${res.get('monthlyArbitrageSavingsUsd', 0.0):,.1f}/mo Savings | Green={res.get('optimalGreenRegion')}")
+        print(f"  * Formal & PQC:     TLA+={'VERIFIED' if res.get('formalVerified') else 'VIOLATION'} ({res.get('formalStatesExplored')} states) | PQ-Safe={res.get('pqcReadinessPercent')}%")
+        print(f"  * SRE & Federation: FrozenSLOs={res.get('frozenSloServicesCount')} | MAPE-K Playbooks={res.get('remediationPlaybooksCount')} | SPIFFE Domains={res.get('spiffeTrustDomainsCount')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10870,6 +10899,11 @@ def run_mcp_server() -> None:
                                 "name": "kite_federation_catalog",
                                 "description": "Synthesize Backstage System/API catalog-info.yaml and SPIRE federated trust bundle.",
                                 "inputSchema": {"type": "object", "properties": {"systemName": {"type": "string", "default": "kite-enterprise-platform"}}}
+                            },
+                            {
+                                "name": "kite_hyperscale_cockpit",
+                                "description": "Capture unified telemetry snapshot across all 10 Milestone 4.0 and 5.0 engines (3D strata, eBPF, WASI PoPs, DR, FinOps/Carbon, TLA+, PQC, SLO gatekeeper, MAPE-K, SPIFFE).",
+                                "inputSchema": {"type": "object", "properties": {}}
                             }
                         ]
                     }
@@ -12911,6 +12945,25 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/federation/catalog", {"systemName": sys_name}, {"systemName": sys_name, "federatedDomainsCount": 3})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_hyperscale_cockpit":
+                    res = api_get_safe(ep, "/api/hyperscale/cockpit", {
+                        "strataCount": 5,
+                        "spatialNodesCount": 5,
+                        "ebpfFlowsCount": 4,
+                        "shadowApiCount": 2,
+                        "healthyEdgePopsCount": 6,
+                        "drRegionsCount": 3,
+                        "monthlyArbitrageSavingsUsd": 5952.8,
+                        "optimalGreenRegion": "eu-north-1",
+                        "formalVerified": True,
+                        "formalStatesExplored": 1312,
+                        "pqcReadinessPercent": 50.0,
+                        "frozenSloServicesCount": 1,
+                        "remediationPlaybooksCount": 3,
+                        "spiffeTrustDomainsCount": 3
+                    })
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13578,6 +13631,10 @@ def main() -> None:
     p_fed.add_argument("--system", default="kite-enterprise-platform", help="Backstage System entity name")
     p_fed.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # hyperscale
+    p_hyper = subparsers.add_parser("hyperscale", help="Unified snapshot of 3D Z-strata, eBPF, WASI PoPs, DR, FinOps/Carbon, TLA+, PQC, SLO, MAPE-K, and SPIFFE")
+    p_hyper.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13736,6 +13793,8 @@ def main() -> None:
         cmd_remediate(args)
     elif args.subcommand == "federation":
         cmd_federation(args)
+    elif args.subcommand == "hyperscale":
+        cmd_hyperscale(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

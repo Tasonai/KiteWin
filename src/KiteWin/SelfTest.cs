@@ -67,6 +67,10 @@ public static class SelfTest
         await Task.Delay(300);
         Check("Settings opens", Find<SettingsPage>(window.RootElement).Any());
 
+        var cockpit = HyperscaleCockpitAggregator.Instance.CaptureSnapshot();
+        Check("HyperscaleCockpitAggregator unifies 3D strata, eBPF, WASI, FinOps, TLA+, PQC, SLO, and SPIFFE metrics",
+            cockpit.StrataCount == 5 && cockpit.HealthyEdgePopsCount == 6 && cockpit.FormalVerified && cockpit.SpiffeTrustDomainsCount == 3);
+
         AgentLog.Line(_failures == 0 ? $"SELFTEST PASS {_count} checks" : $"SELFTEST FAIL {_failures} of {_count} checks");
         AgentLog.Exit(_failures == 0 ? 0 : 1);
     }
