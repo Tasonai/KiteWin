@@ -1234,6 +1234,34 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, tlaSpec);
                     break;
 
+                case "/api/pqc/cbom":
+                    var cbomReport = PostQuantumCryptoEngine.Instance.AuditCbom();
+                    await WriteJsonResponseAsync(res, cbomReport);
+                    break;
+
+                case "/api/pqc/rotate":
+                    var pqcRot = PostQuantumCryptoEngine.Instance.RotateToHybridPqc();
+                    await WriteJsonResponseAsync(res, pqcRot);
+                    break;
+
+                case "/api/pqc/tls-config":
+                    string pqcCluster = "kite-mesh-upstream";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("clusterName", out var cProp))
+                                pqcCluster = cProp.GetString() ?? pqcCluster;
+                        }
+                        catch { }
+                    }
+                    var pqcTls = PostQuantumCryptoEngine.Instance.GenerateEnvoyPqcConfig(pqcCluster);
+                    await WriteJsonResponseAsync(res, pqcTls);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
