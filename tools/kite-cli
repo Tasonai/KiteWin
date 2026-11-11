@@ -9558,6 +9558,64 @@ def cmd_hyperscale(args: argparse.Namespace) -> None:
         print(f"  * SRE & Federation: FrozenSLOs={res.get('frozenSloServicesCount')} | MAPE-K Playbooks={res.get('remediationPlaybooksCount')} | SPIFFE Domains={res.get('spiffeTrustDomainsCount')}")
 
 
+def cmd_loadtest(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "profiles") or "profiles"
+
+    if action == "usl-model":
+        svc = getattr(args, "service", "checkout-api") or "checkout-api"
+        conc = int(getattr(args, "concurrency", 16) or 16)
+        res = api_post_safe(ep, "/api/loadtest/usl-model", {"serviceId": svc, "concurrencyN": conc}, {
+            "serviceId": svc,
+            "concurrencyN": conc,
+            "relativeCapacityFactor": 8.07,
+            "projectedThroughputRps": 3389.8,
+            "optimalConcurrencyKnee": 25,
+            "littlesLawInFlightRequests": 322.03,
+            "isRetrogradeRegion": conc > 25
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== Gunther USL & Little's Law Forecast [{svc} @ N={conc}] ===")
+            print(f"  * Capacity Factor: {res.get('relativeCapacityFactor')}x -> {res.get('projectedThroughputRps')} RPS")
+            print(f"  * Optimal Knee:    N*={res.get('optimalConcurrencyKnee')} | Retrograde={res.get('isRetrogradeRegion')}")
+            print(f"  * Little's Law L:  {res.get('littlesLawInFlightRequests')} in-flight requests")
+
+    elif action == "scripts":
+        svc = getattr(args, "service", "checkout-api") or "checkout-api"
+        vus = int(getattr(args, "vus", 200) or 200)
+        dur = int(getattr(args, "duration", 120) or 120)
+        res = api_post_safe(ep, "/api/loadtest/scripts", {"serviceId": svc, "targetVus": vus, "durationSec": dur}, {
+            "serviceId": svc,
+            "targetVus": vus,
+            "durationSec": dur,
+            "k6ScriptJs": f"// k6 synthetic suite for {svc} ({vus} VUs)",
+            "locustFilePy": f"# Locust swarm for {svc}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("k6ScriptJs", ""))
+            print("---")
+            print(res.get("locustFilePy", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/loadtest/profiles", {
+            "profiles": [
+                {"serviceId": "checkout-api", "endpointPath": "/v1/orders/checkout", "baselineSingleWorkerRps": 420.0, "targetP99LatencyMs": 95.0},
+                {"serviceId": "ledger-writer", "endpointPath": "/v1/ledger/commit", "baselineSingleWorkerRps": 180.0, "targetP99LatencyMs": 60.0},
+                {"serviceId": "search-indexer", "endpointPath": "/v1/catalog/query", "baselineSingleWorkerRps": 950.0, "targetP99LatencyMs": 45.0}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Synthetic Load & USL Scalability Profiles ===")
+            for p in res.get("profiles", []):
+                print(f"  * {p.get('serviceId'):<18} {p.get('endpointPath'):<24} BaseRPS={p.get('baselineSingleWorkerRps')} | P99<={p.get('targetP99LatencyMs')}ms")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10904,6 +10962,34 @@ def run_mcp_server() -> None:
                                 "name": "kite_hyperscale_cockpit",
                                 "description": "Capture unified telemetry snapshot across all 10 Milestone 4.0 and 5.0 engines (3D strata, eBPF, WASI PoPs, DR, FinOps/Carbon, TLA+, PQC, SLO gatekeeper, MAPE-K, SPIFFE).",
                                 "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_loadtest_profiles",
+                                "description": "List service synthetic load profiles, USL contention parameters, and P99 latency targets.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_loadtest_usl_model",
+                                "description": "Evaluate Gunther Universal Scalability Law (USL) saturation knee and Little's Law queue depth.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "serviceId": {"type": "string", "default": "checkout-api"},
+                                        "concurrencyN": {"type": "integer", "default": 16}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_loadtest_scripts",
+                                "description": "Synthesize Grafana k6 ramping-vus script and Python Locust distributed swarm file.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "serviceId": {"type": "string", "default": "checkout-api"},
+                                        "targetVus": {"type": "integer", "default": 200},
+                                        "durationSec": {"type": "integer", "default": 120}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -12964,6 +13050,23 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     })
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_loadtest_profiles":
+                    res = api_get_safe(ep, "/api/loadtest/profiles", {"profiles": [{"serviceId": "checkout-api", "baselineSingleWorkerRps": 420.0}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_loadtest_usl_model":
+                    svc = args.get("serviceId", "checkout-api")
+                    conc = args.get("concurrencyN", 16)
+                    res = api_post_safe(ep, "/api/loadtest/usl-model", {"serviceId": svc, "concurrencyN": conc}, {"serviceId": svc, "concurrencyN": conc, "optimalConcurrencyKnee": 25})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_loadtest_scripts":
+                    svc = args.get("serviceId", "checkout-api")
+                    vus = args.get("targetVus", 200)
+                    dur = args.get("durationSec", 120)
+                    res = api_post_safe(ep, "/api/loadtest/scripts", {"serviceId": svc, "targetVus": vus, "durationSec": dur}, {"serviceId": svc, "targetVus": vus, "k6ScriptJs": "import http from 'k6/http';"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13635,6 +13738,15 @@ def main() -> None:
     p_hyper = subparsers.add_parser("hyperscale", help="Unified snapshot of 3D Z-strata, eBPF, WASI PoPs, DR, FinOps/Carbon, TLA+, PQC, SLO, MAPE-K, and SPIFFE")
     p_hyper.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # loadtest
+    p_lt = subparsers.add_parser("loadtest", help="Synthetic k6/Locust load engineering, Gunther USL saturation model, and Little's Law forecast")
+    p_lt.add_argument("action", nargs="?", choices=["profiles", "usl-model", "scripts"], default="profiles", help="Load testing action")
+    p_lt.add_argument("--service", default="checkout-api", help="Target service ID")
+    p_lt.add_argument("--concurrency", type=int, default=16, help="Concurrency factor N for USL evaluation")
+    p_lt.add_argument("--vus", type=int, default=200, help="Target virtual users for k6/Locust")
+    p_lt.add_argument("--duration", type=int, default=120, help="Load test duration in seconds")
+    p_lt.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13795,6 +13907,8 @@ def main() -> None:
         cmd_federation(args)
     elif args.subcommand == "hyperscale":
         cmd_hyperscale(args)
+    elif args.subcommand == "loadtest":
+        cmd_loadtest(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

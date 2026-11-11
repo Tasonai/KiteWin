@@ -1408,6 +1408,56 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, cockpitSnap);
                     break;
 
+                case "/api/loadtest/profiles":
+                    var ltProfiles = LoadTestingEngine.Instance.GetProfiles();
+                    await WriteJsonResponseAsync(res, new { profiles = ltProfiles });
+                    break;
+
+                case "/api/loadtest/usl-model":
+                    string uslSvc = "checkout-api";
+                    int uslConc = 16;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("serviceId", out var sProp))
+                                uslSvc = sProp.GetString() ?? uslSvc;
+                            if (doc.RootElement.TryGetProperty("concurrencyN", out var nProp) && nProp.TryGetInt32(out var nVal))
+                                uslConc = nVal;
+                        }
+                        catch { }
+                    }
+                    var uslForecast = LoadTestingEngine.Instance.EvaluateUslModel(uslSvc, uslConc);
+                    await WriteJsonResponseAsync(res, uslForecast);
+                    break;
+
+                case "/api/loadtest/scripts":
+                    string ltSvc = "checkout-api";
+                    int ltVus = 200;
+                    int ltDur = 120;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("serviceId", out var sProp))
+                                ltSvc = sProp.GetString() ?? ltSvc;
+                            if (doc.RootElement.TryGetProperty("targetVus", out var vProp) && vProp.TryGetInt32(out var vVal))
+                                ltVus = vVal;
+                            if (doc.RootElement.TryGetProperty("durationSec", out var dProp) && dProp.TryGetInt32(out var dVal))
+                                ltDur = dVal;
+                        }
+                        catch { }
+                    }
+                    var ltBundle = LoadTestingEngine.Instance.SynthesizeLoadScripts(ltSvc, ltVus, ltDur);
+                    await WriteJsonResponseAsync(res, ltBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
