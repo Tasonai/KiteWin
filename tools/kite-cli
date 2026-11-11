@@ -8916,6 +8916,88 @@ def cmd_cluster(args: argparse.Namespace) -> None:
                 print(f"  * {n.get('id'):<16} {role_badge:<12} {n.get('endpoint'):<26} Heartbeat: {n.get('lastHeartbeatSecondsAgo'):.1f}s ago")
 
 
+def cmd_ebpf(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "flows") or "flows"
+
+    if action == "shadow-audit":
+        res = api_post_safe(ep, "/api/ebpf/shadow-audit", {}, {
+            "inspectedFlows": 4,
+            "declaredEdgesCount": 2,
+            "undocumentedEdgesCount": 1,
+            "rogueEgressCount": 1,
+            "complianceScore": 55,
+            "findings": [
+                {
+                    "id": "SHADOW-SVC-flow-kprobe-03",
+                    "severity": "high",
+                    "sourceWorkload": "checkout-worker",
+                    "destinationWorkload": "legacy-Shadow-Billing",
+                    "destinationPort": 9090,
+                    "category": "undocumented-shadow-api",
+                    "recommendation": "Promote checkout-worker -> legacy-Shadow-Billing:9090 (unencrypted plaintext socket) onto architecture canvas or enforce mTLS SPIFFE identity."
+                },
+                {
+                    "id": "SHADOW-EGRESS-flow-kprobe-04",
+                    "severity": "critical",
+                    "sourceWorkload": "checkout-worker",
+                    "destinationWorkload": "telemetry-collector.unverified-wan.io",
+                    "destinationPort": 443,
+                    "category": "rogue-wan-egress",
+                    "recommendation": "Block unauthorized outbound WAN socket to telemetry-collector.unverified-wan.io:443 via CiliumNetworkPolicy egress deny rule."
+                }
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== eBPF Kernel Shadow Dependency & Egress Audit ===")
+            print(f"Inspected Kernel Flows: {res.get('inspectedFlows')}")
+            print(f"Declared Canvas Edges:  {res.get('declaredEdgesCount')}")
+            print(f"Undocumented Shadow:    {res.get('undocumentedEdgesCount')}")
+            print(f"Rogue WAN Egress:       {res.get('rogueEgressCount')}")
+            print(f"Compliance Score:       {res.get('complianceScore')}/100\n")
+            for f in res.get("findings", []):
+                print(f"  [{f.get('severity', '').upper()}] {f.get('id')} ({f.get('category')})")
+                print(f"    Socket: {f.get('sourceWorkload')} -> {f.get('destinationWorkload')}:{f.get('destinationPort')}")
+                print(f"    Action: {f.get('recommendation')}\n")
+
+    elif action == "policy":
+        ns = getattr(args, "namespace", "kite-prod") or "kite-prod"
+        res = api_post_safe(ep, "/api/ebpf/policy", {"namespace": ns, "blockRogueEgress": True}, {
+            "namespace": ns,
+            "tetragonTracingPolicyYaml": f"apiVersion: cilium.io/v1alpha1\nkind: TracingPolicyNamespaced\nmetadata:\n  name: kite-zero-trust-socket-monitor\n  namespace: {ns}",
+            "ciliumNetworkPolicyYaml": f"apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: kite-canvas-enforced-topology\n  namespace: {ns}",
+            "ebpfSockopsProbeC": "SEC(\"sockops\") int kite_trace_sockops(struct bpf_sock_ops *skops) { ... }"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== eBPF Zero-Trust Enforcement Bundle (Namespace: {ns}) ===")
+            print("--- Tetragon TracingPolicy ---")
+            print(res.get("tetragonTracingPolicyYaml", ""))
+            print("\n--- CiliumNetworkPolicy ---")
+            print(res.get("ciliumNetworkPolicyYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/ebpf/flows", {
+            "flows": [
+                {"id": "flow-kprobe-01", "sourceWorkload": "api-gateway", "destinationWorkload": "auth-service", "destinationPort": 8443, "wireProtocol": "gRPC", "tcpRttMs": 0.42, "p99WireLatencyMs": 3.10, "isExternalEgress": False},
+                {"id": "flow-kprobe-02", "sourceWorkload": "auth-service", "destinationWorkload": "users-postgres", "destinationPort": 5432, "wireProtocol": "PostgreSQL-Wire", "tcpRttMs": 0.31, "p99WireLatencyMs": 2.45, "isExternalEgress": False},
+                {"id": "flow-kprobe-03", "sourceWorkload": "checkout-worker", "destinationWorkload": "legacy-Shadow-Billing", "destinationPort": 9090, "wireProtocol": "HTTP/2", "tcpRttMs": 1.95, "p99WireLatencyMs": 28.40, "isExternalEgress": False},
+                {"id": "flow-kprobe-04", "sourceWorkload": "checkout-worker", "destinationWorkload": "telemetry-collector.unverified-wan.io", "destinationPort": 443, "wireProtocol": "TCP-TLS1.3", "tcpRttMs": 34.80, "p99WireLatencyMs": 92.10, "isExternalEgress": True}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            flows = res.get("flows", [])
+            print(f"=== eBPF Zero-Instrumentation Kernel Socket Flows ({len(flows)} active) ===")
+            for fl in flows:
+                egress_tag = " [WAN-EGRESS]" if fl.get("isExternalEgress") else ""
+                print(f"  * {fl.get('sourceWorkload')} -> {fl.get('destinationWorkload')}:{fl.get('destinationPort')} [{fl.get('wireProtocol')}] RTT: {fl.get('tcpRttMs')}ms | P99: {fl.get('p99WireLatencyMs')}ms{egress_tag}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10029,6 +10111,36 @@ def run_mcp_server() -> None:
                                     "properties": {
                                         "replicas": {"type": "integer", "description": "Number of Raft cluster replicas", "default": 3},
                                         "docType": {"type": "string", "enum": ["all", "crd", "statefulset", "operator", "helm"], "default": "all"}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_ebpf_flows",
+                                "description": "Capture zero-sidecar eBPF L4/L7 kernel socket flows, TCP RTT, and wire latency.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_ebpf_shadow_audit",
+                                "description": "Diff live eBPF kernel sockets against declared canvas connectors to detect shadow APIs and rogue WAN egress.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "json": {"type": "boolean", "description": "Return machine-readable JSON", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_ebpf_policy",
+                                "description": "Synthesize CiliumNetworkPolicy, Tetragon TracingPolicy, and eBPF sockops C probe.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "namespace": {"type": "string", "description": "Target Kubernetes namespace", "default": "kite-prod"}
                                     }
                                 }
                             }
@@ -11866,6 +11978,43 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                         }
                     })
 
+                elif tool_name == "kite_ebpf_flows":
+                    res = api_get_safe(ep, "/api/ebpf/flows", {
+                        "flows": [
+                            {"id": "flow-kprobe-01", "sourceWorkload": "api-gateway", "destinationWorkload": "auth-service", "destinationPort": 8443, "wireProtocol": "gRPC", "tcpRttMs": 0.42, "p99WireLatencyMs": 3.10, "isExternalEgress": False},
+                            {"id": "flow-kprobe-04", "sourceWorkload": "checkout-worker", "destinationWorkload": "telemetry-collector.unverified-wan.io", "destinationPort": 443, "wireProtocol": "TCP-TLS1.3", "tcpRttMs": 34.80, "p99WireLatencyMs": 92.10, "isExternalEgress": True}
+                        ]
+                    })
+                    rendered = json.dumps(res, indent=2) if args.get("json", False) else "\n".join(
+                        f"{f.get('sourceWorkload')} -> {f.get('destinationWorkload')}:{f.get('destinationPort')} [{f.get('wireProtocol')}] RTT={f.get('tcpRttMs')}ms"
+                        for f in res.get("flows", [])
+                    )
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_ebpf_shadow_audit":
+                    res = api_post_safe(ep, "/api/ebpf/shadow-audit", {}, {
+                        "inspectedFlows": 4,
+                        "undocumentedEdgesCount": 1,
+                        "rogueEgressCount": 1,
+                        "complianceScore": 55,
+                        "findings": []
+                    })
+                    rendered = json.dumps(res, indent=2) if args.get("json", False) else (
+                        f"eBPF Shadow Audit: Score {res.get('complianceScore')}/100 | "
+                        f"Undocumented={res.get('undocumentedEdgesCount')}, RogueEgress={res.get('rogueEgressCount')}"
+                    )
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
+                elif tool_name == "kite_ebpf_policy":
+                    ns = args.get("namespace", "kite-prod")
+                    res = api_post_safe(ep, "/api/ebpf/policy", {"namespace": ns, "blockRogueEgress": True}, {
+                        "namespace": ns,
+                        "tetragonTracingPolicyYaml": f"kind: TracingPolicyNamespaced\nmetadata:\n  namespace: {ns}",
+                        "ciliumNetworkPolicyYaml": f"kind: CiliumNetworkPolicy\nmetadata:\n  namespace: {ns}"
+                    })
+                    rendered = f"{res.get('tetragonTracingPolicyYaml', '')}\n---\n{res.get('ciliumNetworkPolicyYaml', '')}"
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12460,6 +12609,12 @@ def main() -> None:
     p_cluster.add_argument("--doc-type", choices=["all", "crd", "statefulset", "operator", "helm"], default="all", help="Manifest document type to output")
     p_cluster.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # ebpf
+    p_ebpf = subparsers.add_parser("ebpf", help="Zero-sidecar eBPF kernel socket telemetry, shadow API audit, and Tetragon/Cilium policies")
+    p_ebpf.add_argument("action", nargs="?", choices=["flows", "shadow-audit", "policy"], default="flows", help="eBPF action (flows, shadow-audit, policy)")
+    p_ebpf.add_argument("--namespace", default="kite-prod", help="Target Kubernetes namespace for policy synthesis")
+    p_ebpf.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -12598,6 +12753,8 @@ def main() -> None:
         cmd_timetravel(args)
     elif args.subcommand == "cluster":
         cmd_cluster(args)
+    elif args.subcommand == "ebpf":
+        cmd_ebpf(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

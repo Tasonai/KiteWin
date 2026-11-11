@@ -965,6 +965,59 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, k8sManifest);
                     break;
 
+                case "/api/ebpf/flows":
+                    var ebpfFlows = EbpfTelemetryEngine.Instance.GetKernelFlows();
+                    await WriteJsonResponseAsync(res, new { flows = ebpfFlows });
+                    break;
+
+                case "/api/ebpf/shadow-audit":
+                    List<DeclaredCanvasEdge>? declaredEdges = null;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("declaredEdges", out var edgesProp) && edgesProp.ValueKind == JsonValueKind.Array)
+                            {
+                                declaredEdges = new List<DeclaredCanvasEdge>();
+                                foreach (var elem in edgesProp.EnumerateArray())
+                                {
+                                    var src = elem.TryGetProperty("source", out var sp) ? sp.GetString() : null;
+                                    var dst = elem.TryGetProperty("destination", out var dp) ? dp.GetString() : null;
+                                    if (!string.IsNullOrEmpty(src) && !string.IsNullOrEmpty(dst))
+                                        declaredEdges.Add(new DeclaredCanvasEdge { Source = src, Destination = dst });
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                    var shadowReport = EbpfTelemetryEngine.Instance.AuditShadowDependencies(declaredEdges);
+                    await WriteJsonResponseAsync(res, shadowReport);
+                    break;
+
+                case "/api/ebpf/policy":
+                    string ebpfNs = "kite-prod";
+                    bool blockRogue = true;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("namespace", out var nsProp))
+                                ebpfNs = nsProp.GetString() ?? ebpfNs;
+                            if (doc.RootElement.TryGetProperty("blockRogueEgress", out var brProp) && (brProp.ValueKind == JsonValueKind.True || brProp.ValueKind == JsonValueKind.False))
+                                blockRogue = brProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var ebpfBundle = EbpfTelemetryEngine.Instance.GenerateEbpfPolicy(ebpfNs, blockRogue);
+                    await WriteJsonResponseAsync(res, ebpfBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
