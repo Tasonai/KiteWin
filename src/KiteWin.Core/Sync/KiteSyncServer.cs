@@ -1508,6 +1508,50 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, polBundle);
                     break;
 
+                case "/api/otel/traces":
+                    var otelSpans = OtelTracingEngine.Instance.GetTraceSpans();
+                    await WriteJsonResponseAsync(res, new { spans = otelSpans });
+                    break;
+
+                case "/api/otel/critical-path":
+                    string otelTid = OtelTracingEngine.DefaultTraceId;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("traceId", out var tProp))
+                                otelTid = tProp.GetString() ?? otelTid;
+                        }
+                        catch { }
+                    }
+                    var otelAttr = OtelTracingEngine.Instance.AnalyzeCriticalPath(otelTid);
+                    await WriteJsonResponseAsync(res, otelAttr);
+                    break;
+
+                case "/api/otel/collector-config":
+                    string otelEnv = "prod-eu-central";
+                    int otelThresh = 150;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("clusterEnv", out var eProp))
+                                otelEnv = eProp.GetString() ?? otelEnv;
+                            if (doc.RootElement.TryGetProperty("tailSampleLatencyThresholdMs", out var thProp) && thProp.TryGetInt32(out var thVal))
+                                otelThresh = thVal;
+                        }
+                        catch { }
+                    }
+                    var otelCfg = OtelTracingEngine.Instance.SynthesizeCollectorConfig(otelEnv, otelThresh);
+                    await WriteJsonResponseAsync(res, otelCfg);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

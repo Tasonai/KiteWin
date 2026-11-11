@@ -9672,6 +9672,59 @@ def cmd_policy(args: argparse.Namespace) -> None:
                 print(f"  * [{r.get('effect', '').upper():<6}] {r.get('id'):<28} Role={r.get('principalRole'):<20} Action={r.get('action')}")
 
 
+def cmd_otel(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "traces") or "traces"
+
+    if action == "critical-path":
+        tid = getattr(args, "trace_id", "4bf92f3577b34da6a3ce929d0e0e4736") or "4bf92f3577b34da6a3ce929d0e0e4736"
+        res = api_post_safe(ep, "/api/otel/critical-path", {"traceId": tid}, {
+            "traceId": tid,
+            "totalDurationMs": 210.0,
+            "bottleneckService": "inventory-postgres",
+            "bottleneckSelfTimeMs": 148.0,
+            "nPlusOneDetected": True,
+            "waterfallSummary": ["inventory-postgres [SELECT stock FOR UPDATE (x24)]: total=148.0ms, self=148.0ms"]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== OpenTelemetry Critical Path [{tid}] ===")
+            print(f"  * Bottleneck: {res.get('bottleneckService')} (Self={res.get('bottleneckSelfTimeMs')}ms / Total={res.get('totalDurationMs')}ms) | N+1={res.get('nPlusOneDetected')}")
+            for line in res.get("waterfallSummary", []):
+                print(f"    - {line}")
+
+    elif action == "collector-config":
+        env = getattr(args, "env", "prod-eu-central") or "prod-eu-central"
+        thresh = int(getattr(args, "threshold_ms", 150) or 150)
+        res = api_post_safe(ep, "/api/otel/collector-config", {
+            "clusterEnv": env,
+            "tailSampleLatencyThresholdMs": thresh
+        }, {
+            "clusterEnv": env,
+            "tailSampleLatencyThresholdMs": thresh,
+            "otelCollectorYaml": f"processors:\n  tail_sampling:\n    policies:\n      - latency: {{ threshold_ms: {thresh} }}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("otelCollectorYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/otel/traces", {
+            "spans": [
+                {"spanId": "span-root-01", "serviceName": "api-gateway", "operationName": "POST /v1/orders/checkout", "durationMs": 210.0},
+                {"spanId": "span-pg-04", "serviceName": "inventory-postgres", "operationName": "SELECT stock FOR UPDATE (x24)", "durationMs": 148.0}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Distributed OpenTelemetry W3C Trace Spans ===")
+            for s in res.get("spans", []):
+                print(f"  * {s.get('spanId'):<18} {s.get('serviceName'):<22} {s.get('operationName'):<34} {s.get('durationMs')}ms")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -11069,6 +11122,27 @@ def run_mcp_server() -> None:
                                 "name": "kite_policy_bundle",
                                 "description": "Synthesize Open Policy Agent (OPA Rego v1) module and AWS Cedar policy set.",
                                 "inputSchema": {"type": "object", "properties": {"namespace": {"type": "string", "default": "kite.authz.v1"}}}
+                            },
+                            {
+                                "name": "kite_otel_traces",
+                                "description": "Query W3C traceparent distributed span waterfall across architecture services.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_otel_critical_path",
+                                "description": "Attribute Critical Path self-time latency and detect N+1 database cascades.",
+                                "inputSchema": {"type": "object", "properties": {"traceId": {"type": "string", "default": "4bf92f3577b34da6a3ce929d0e0e4736"}}}
+                            },
+                            {
+                                "name": "kite_otel_collector_config",
+                                "description": "Synthesize OpenTelemetry Collector tail-sampling and PII redaction YAML pipeline.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "clusterEnv": {"type": "string", "default": "prod-eu-central"},
+                                        "tailSampleLatencyThresholdMs": {"type": "integer", "default": 150}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -13163,6 +13237,21 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/policy/bundle", {"namespace": ns}, {"namespace": ns, "opaRegoModule": f"package {ns}\nimport rego.v1"})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_otel_traces":
+                    res = api_get_safe(ep, "/api/otel/traces", {"spans": [{"spanId": "span-root-01", "serviceName": "api-gateway", "durationMs": 210.0}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_otel_critical_path":
+                    tid = args.get("traceId", "4bf92f3577b34da6a3ce929d0e0e4736")
+                    res = api_post_safe(ep, "/api/otel/critical-path", {"traceId": tid}, {"traceId": tid, "bottleneckService": "inventory-postgres", "nPlusOneDetected": True})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_otel_collector_config":
+                    env = args.get("clusterEnv", "prod-eu-central")
+                    th = args.get("tailSampleLatencyThresholdMs", 150)
+                    res = api_post_safe(ep, "/api/otel/collector-config", {"clusterEnv": env, "tailSampleLatencyThresholdMs": th}, {"clusterEnv": env, "tailSampleLatencyThresholdMs": th})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13853,6 +13942,14 @@ def main() -> None:
     p_pol.add_argument("--namespace", default="kite.authz.v1", help="Rego package namespace")
     p_pol.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # otel
+    p_otel = subparsers.add_parser("otel", help="OpenTelemetry W3C distributed trace waterfall, Critical Path, and Collector tail-sampling")
+    p_otel.add_argument("action", nargs="?", choices=["traces", "critical-path", "collector-config"], default="traces", help="OpenTelemetry action")
+    p_otel.add_argument("--trace-id", default="4bf92f3577b34da6a3ce929d0e0e4736", help="Target W3C trace ID")
+    p_otel.add_argument("--env", default="prod-eu-central", help="Target cluster environment")
+    p_otel.add_argument("--threshold-ms", type=int, default=150, help="Tail-sampling latency threshold in ms")
+    p_otel.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -14017,6 +14114,8 @@ def main() -> None:
         cmd_loadtest(args)
     elif args.subcommand == "policy":
         cmd_policy(args)
+    elif args.subcommand == "otel":
+        cmd_otel(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
