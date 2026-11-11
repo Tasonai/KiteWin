@@ -9185,6 +9185,66 @@ def cmd_finops(args: argparse.Namespace) -> None:
                 print(f"  * {w.get('workloadId'):<28} [{w.get('provider')}:{w.get('region')}] ${w.get('monthlyCostUsd'):>7,.2f}/mo | {w.get('gridCarbonGco2PerKwh')} gCO2/kWh")
 
 
+def cmd_spatial3d(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "scene") or "scene"
+
+    if action == "layout":
+        iters = getattr(args, "iterations", 12) or 12
+        res = api_post_safe(ep, "/api/spatial3d/layout", {"iterations": iters}, {
+            "sceneId": "kite-spatial3d-scene-01",
+            "strataCount": 5,
+            "nodes": [
+                {"id": "node-cdn", "label": "Global Edge WASI CDN", "stratum": "Z0-Edge", "x": 1.25, "y": 44.10, "z": 0.0},
+                {"id": "node-orders", "label": "Orders Domain Service", "stratum": "Z2-Domain", "x": -0.40, "y": -0.20, "z": -80.0},
+                {"id": "node-pg", "label": "CockroachDB Ledger", "stratum": "Z4-StatefulStorage", "x": -1.10, "y": -40.80, "z": -160.0}
+            ],
+            "edges": [{"sourceId": "node-cdn", "targetId": "node-bff", "protocol": "HTTP/3"}]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== 3D Force-Directed Topology Equilibrium ({iters} iterations) ===")
+            for n in res.get("nodes", []):
+                print(f"  * [{n.get('stratum'):<18}] {n.get('id'):<14} Pos=({n.get('x')}, {n.get('y')}, {n.get('z')})")
+
+    elif action == "export":
+        res = api_post_safe(ep, "/api/spatial3d/export", {}, {
+            "formatVersion": "glTF-2.0",
+            "nodeCount": 5,
+            "gltfJson": "{\n  \"asset\": {\"version\": \"2.0\", \"generator\": \"Kite Spatial3D Topology Exporter\"},\n  \"scene\": 0\n}"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("gltfJson", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/spatial3d/scene", {
+            "sceneId": "kite-spatial3d-scene-01",
+            "strataCount": 5,
+            "nodes": [
+                {"id": "node-cdn", "label": "Global Edge WASI CDN", "stratum": "Z0-Edge", "x": 0.0, "y": 40.0, "z": 0.0},
+                {"id": "node-bff", "label": "Web & Mobile BFF", "stratum": "Z1-Presentation", "x": -24.0, "y": 20.0, "z": -40.0},
+                {"id": "node-orders", "label": "Orders Domain Service", "stratum": "Z2-Domain", "x": 0.0, "y": 0.0, "z": -80.0},
+                {"id": "node-kafka", "label": "Kafka Event Backbone", "stratum": "Z3-Streaming", "x": 28.0, "y": -16.0, "z": -120.0},
+                {"id": "node-pg", "label": "CockroachDB Ledger", "stratum": "Z4-StatefulStorage", "x": 0.0, "y": -36.0, "z": -160.0}
+            ],
+            "edges": [
+                {"sourceId": "node-cdn", "targetId": "node-bff", "protocol": "HTTP/3"},
+                {"sourceId": "node-bff", "targetId": "node-orders", "protocol": "gRPC"},
+                {"sourceId": "node-orders", "targetId": "node-kafka", "protocol": "Kafka-TLS"},
+                {"sourceId": "node-orders", "targetId": "node-pg", "protocol": "PostgreSQL-Wire"}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== 3D Spatial Architecture Scene Graph ({res.get('strataCount')} Z-Strata) ===")
+            for n in res.get("nodes", []):
+                print(f"  * [{n.get('stratum'):<18}] {n.get('label'):<24} ({n.get('x')}, {n.get('y')}, {n.get('z')})")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10403,6 +10463,21 @@ def run_mcp_server() -> None:
                                 "name": "kite_finops_green_schedule",
                                 "description": "Synthesize Karpenter ARM64 NodePool and KEDA carbon-aware batch workload scaler.",
                                 "inputSchema": {"type": "object", "properties": {"maxCarbonThresholdGco2": {"type": "integer", "default": 80}}}
+                            },
+                            {
+                                "name": "kite_spatial3d_scene",
+                                "description": "Query 3D Z-stratified architecture topology scene graph.",
+                                "inputSchema": {"type": "object", "properties": {"json": {"type": "boolean", "default": False}}}
+                            },
+                            {
+                                "name": "kite_spatial3d_layout",
+                                "description": "Execute 3D force-directed spring-repulsion relaxation across Z-elevation strata.",
+                                "inputSchema": {"type": "object", "properties": {"iterations": {"type": "integer", "default": 12}}}
+                            },
+                            {
+                                "name": "kite_spatial3d_export",
+                                "description": "Export standards-compliant glTF 2.0 3D architecture scene graph JSON.",
+                                "inputSchema": {"type": "object", "properties": {}}
                             }
                         ]
                     }
@@ -12354,6 +12429,19 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     rendered = f"Optimal Green Region: {res.get('optimalLowCarbonRegion')} ({res.get('optimalCarbonGco2PerKwh')} gCO2/kWh, -{res.get('carbonReductionPercent')}%)"
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": rendered}]}})
 
+                elif tool_name == "kite_spatial3d_scene":
+                    res = api_get_safe(ep, "/api/spatial3d/scene", {"sceneId": "kite-spatial3d-scene-01", "strataCount": 5, "nodes": []})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_spatial3d_layout":
+                    iters = args.get("iterations", 12)
+                    res = api_post_safe(ep, "/api/spatial3d/layout", {"iterations": iters}, {"sceneId": "kite-spatial3d-scene-01", "strataCount": 5})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_spatial3d_export":
+                    res = api_post_safe(ep, "/api/spatial3d/export", {}, {"formatVersion": "glTF-2.0", "nodeCount": 5, "gltfJson": "{\"asset\":{\"version\":\"2.0\"}}"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": res.get("gltfJson", "")}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -12975,6 +13063,12 @@ def main() -> None:
     p_finops.add_argument("--max-carbon", type=int, default=80, help="Max electricity carbon intensity threshold (gCO2eq/kWh)")
     p_finops.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # spatial3d
+    p_spatial3d = subparsers.add_parser("spatial3d", help="3D Z-stratified spatial architecture topology, force-directed layout, and glTF 2.0 export")
+    p_spatial3d.add_argument("action", nargs="?", choices=["scene", "layout", "export"], default="scene", help="Spatial3D action (scene, layout, export)")
+    p_spatial3d.add_argument("--iterations", type=int, default=12, help="Force-directed relaxation iterations")
+    p_spatial3d.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13121,6 +13215,8 @@ def main() -> None:
         cmd_dr(args)
     elif args.subcommand == "finops":
         cmd_finops(args)
+    elif args.subcommand == "spatial3d":
+        cmd_spatial3d(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

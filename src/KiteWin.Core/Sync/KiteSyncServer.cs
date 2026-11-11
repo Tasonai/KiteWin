@@ -1159,6 +1159,34 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, greenBundle);
                     break;
 
+                case "/api/spatial3d/scene":
+                    var scene3d = Spatial3DTopologyEngine.Instance.GetScene();
+                    await WriteJsonResponseAsync(res, scene3d);
+                    break;
+
+                case "/api/spatial3d/layout":
+                    int iters = 12;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("iterations", out var itProp) && itProp.TryGetInt32(out var itVal))
+                                iters = itVal;
+                        }
+                        catch { }
+                    }
+                    var relaxedScene = Spatial3DTopologyEngine.Instance.ComputeForceDirectedLayout(iters);
+                    await WriteJsonResponseAsync(res, relaxedScene);
+                    break;
+
+                case "/api/spatial3d/export":
+                    var gltfBundle = Spatial3DTopologyEngine.Instance.ExportGltfScene();
+                    await WriteJsonResponseAsync(res, gltfBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
