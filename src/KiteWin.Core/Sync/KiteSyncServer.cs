@@ -1187,6 +1187,53 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, gltfBundle);
                     break;
 
+                case "/api/formal/invariants":
+                    var formalInvs = FormalVerificationEngine.Instance.GetInvariants();
+                    await WriteJsonResponseAsync(res, new { invariants = formalInvs });
+                    break;
+
+                case "/api/formal/model-check":
+                    int formalDepth = 8;
+                    bool injectSplitBrain = false;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("maxDepth", out var dProp) && dProp.TryGetInt32(out var dVal))
+                                formalDepth = dVal;
+                            if (doc.RootElement.TryGetProperty("injectSplitBrainFault", out var fProp) && (fProp.ValueKind == JsonValueKind.True || fProp.ValueKind == JsonValueKind.False))
+                                injectSplitBrain = fProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var mcReport = FormalVerificationEngine.Instance.RunBoundedModelCheck(formalDepth, injectSplitBrain);
+                    await WriteJsonResponseAsync(res, mcReport);
+                    break;
+
+                case "/api/formal/tla-spec":
+                    string tlaModule = "KiteArchitectureSpec";
+                    int tlaQuorum = 3;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("moduleName", out var mProp))
+                                tlaModule = mProp.GetString() ?? tlaModule;
+                            if (doc.RootElement.TryGetProperty("quorumSize", out var qProp) && qProp.TryGetInt32(out var qVal))
+                                tlaQuorum = qVal;
+                        }
+                        catch { }
+                    }
+                    var tlaSpec = FormalVerificationEngine.Instance.SynthesizeFormalSpec(tlaModule, tlaQuorum);
+                    await WriteJsonResponseAsync(res, tlaSpec);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
