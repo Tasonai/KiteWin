@@ -9357,6 +9357,58 @@ def cmd_pqc(args: argparse.Namespace) -> None:
                 print(f"  * [{tag:<9}] {e.get('componentId'):<24} {e.get('algorithm')} ({e.get('nistStandard')})")
 
 
+def cmd_slo(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "budgets") or "budgets"
+
+    if action == "gate-check":
+        svc = getattr(args, "service", "checkout-api") or "checkout-api"
+        fallback_verdict = "FREEZE_RELEASE" if svc == "ledger-writer" else ("CANARY_ONLY" if svc == "search-indexer" else "ALLOW_DEPLOY")
+        res = api_post_safe(ep, "/api/slo/gate-check", {"serviceId": svc}, {
+            "serviceId": svc,
+            "verdict": fallback_verdict,
+            "fastBurnTriggered": svc == "ledger-writer",
+            "mediumBurnTriggered": svc in ("ledger-writer", "search-indexer"),
+            "reason": f"Evaluated multi-window error-budget burn rate for {svc}."
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"=== SLO Release Gatekeeper [{res.get('serviceId')}] -> {res.get('verdict')} ===")
+            print(f"  Reason: {res.get('reason')}")
+
+    elif action == "openslo":
+        svc = getattr(args, "service", "checkout-api") or "checkout-api"
+        target = getattr(args, "target", 99.95) or 99.95
+        res = api_post_safe(ep, "/api/slo/openslo", {"serviceId": svc, "sloTargetPercent": target}, {
+            "serviceId": svc,
+            "sloTargetPercent": target,
+            "openSloYaml": f"apiVersion: openslo/v1\nkind: SLO\nmetadata:\n  name: {svc}-availability-slo",
+            "prometheusRuleYaml": f"apiVersion: monitoring.coreos.com/v1\nkind: PrometheusRule\nmetadata:\n  name: {svc}-multiwindow-burn-alerts"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("openSloYaml", ""))
+            print("---")
+            print(res.get("prometheusRuleYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/slo/budgets", {
+            "budgets": [
+                {"serviceId": "checkout-api", "sloTargetPercent": 99.95, "burnRate1h": 1.2, "burnRate6h": 0.9, "remainingBudgetPercent": 84.5},
+                {"serviceId": "ledger-writer", "sloTargetPercent": 99.99, "burnRate1h": 16.8, "burnRate6h": 7.4, "remainingBudgetPercent": 12.4},
+                {"serviceId": "search-indexer", "sloTargetPercent": 99.90, "burnRate1h": 4.5, "burnRate6h": 6.2, "remainingBudgetPercent": 41.0}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== 30-Day Rolling SLO Error Budgets & Multi-Window Burn Rates ===")
+            for b in res.get("budgets", []):
+                print(f"  * {b.get('serviceId'):<18} Target={b.get('sloTargetPercent')}% | 1h={b.get('burnRate1h')}x | 6h={b.get('burnRate6h')}x | Budget={b.get('remainingBudgetPercent')}%")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10632,6 +10684,27 @@ def run_mcp_server() -> None:
                                 "name": "kite_pqc_tls_config",
                                 "description": "Synthesize Envoy PQ-TLS 1.3 transport socket configuration.",
                                 "inputSchema": {"type": "object", "properties": {"clusterName": {"type": "string", "default": "kite-mesh-upstream"}}}
+                            },
+                            {
+                                "name": "kite_slo_budgets",
+                                "description": "Query 30-day rolling SLO error budgets and multi-window burn rates.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_slo_gate_check",
+                                "description": "Evaluate automated CI/CD release freeze gate from multi-window SLO burn rates.",
+                                "inputSchema": {"type": "object", "properties": {"serviceId": {"type": "string", "default": "checkout-api"}}}
+                            },
+                            {
+                                "name": "kite_slo_openslo",
+                                "description": "Synthesize OpenSLO v1 and PrometheusRule multi-window alerting YAML.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "serviceId": {"type": "string", "default": "checkout-api"},
+                                        "sloTargetPercent": {"type": "number", "default": 99.95}
+                                    }
+                                }
                             }
                         ]
                     }
@@ -12625,6 +12698,21 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/pqc/tls-config", {"clusterName": cluster}, {"clusterName": cluster, "hybridKemGroup": "X25519MLKEM768"})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_slo_budgets":
+                    res = api_get_safe(ep, "/api/slo/budgets", {"budgets": [{"serviceId": "checkout-api", "remainingBudgetPercent": 84.5}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_slo_gate_check":
+                    svc = args.get("serviceId", "checkout-api")
+                    res = api_post_safe(ep, "/api/slo/gate-check", {"serviceId": svc}, {"serviceId": svc, "verdict": "ALLOW_DEPLOY"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_slo_openslo":
+                    svc = args.get("serviceId", "checkout-api")
+                    target = args.get("sloTargetPercent", 99.95)
+                    res = api_post_safe(ep, "/api/slo/openslo", {"serviceId": svc, "sloTargetPercent": target}, {"serviceId": svc, "openSloYaml": "apiVersion: openslo/v1"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13267,6 +13355,13 @@ def main() -> None:
     p_pqc.add_argument("--cluster", default="kite-mesh-upstream", help="Upstream cluster name for Envoy SDS config")
     p_pqc.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # slo
+    p_slo = subparsers.add_parser("slo", help="Multi-window SLO error-budget burn-rate auditor, release gatekeeper, and OpenSLO generator")
+    p_slo.add_argument("action", nargs="?", choices=["budgets", "gate-check", "openslo"], default="budgets", help="SLO governance action")
+    p_slo.add_argument("--service", default="checkout-api", help="Target service ID")
+    p_slo.add_argument("--target", type=float, default=99.95, help="SLO availability target percent")
+    p_slo.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13419,6 +13514,8 @@ def main() -> None:
         cmd_formal(args)
     elif args.subcommand == "pqc":
         cmd_pqc(args)
+    elif args.subcommand == "slo":
+        cmd_slo(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

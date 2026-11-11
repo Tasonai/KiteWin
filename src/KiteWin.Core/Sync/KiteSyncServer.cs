@@ -1262,6 +1262,50 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, pqcTls);
                     break;
 
+                case "/api/slo/budgets":
+                    var sloBudgets = SloBurnRateEngine.Instance.GetBudgets();
+                    await WriteJsonResponseAsync(res, new { budgets = sloBudgets });
+                    break;
+
+                case "/api/slo/gate-check":
+                    string sloSvc = "checkout-api";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("serviceId", out var sProp))
+                                sloSvc = sProp.GetString() ?? sloSvc;
+                        }
+                        catch { }
+                    }
+                    var gateVerdict = SloBurnRateEngine.Instance.EvaluateReleaseGate(sloSvc);
+                    await WriteJsonResponseAsync(res, gateVerdict);
+                    break;
+
+                case "/api/slo/openslo":
+                    string openSloSvc = "checkout-api";
+                    double openSloTarget = 99.95;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("serviceId", out var sProp))
+                                openSloSvc = sProp.GetString() ?? openSloSvc;
+                            if (doc.RootElement.TryGetProperty("sloTargetPercent", out var tProp) && tProp.TryGetDouble(out var tVal))
+                                openSloTarget = tVal;
+                        }
+                        catch { }
+                    }
+                    var openSloBundle = SloBurnRateEngine.Instance.GenerateOpenSloManifest(openSloSvc, openSloTarget);
+                    await WriteJsonResponseAsync(res, openSloBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
