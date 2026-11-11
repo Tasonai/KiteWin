@@ -1356,6 +1356,53 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, rolloutSpec);
                     break;
 
+                case "/api/federation/trust-domains":
+                    var trustDomains = FederationCatalogEngine.Instance.GetTrustDomains();
+                    await WriteJsonResponseAsync(res, new { trustDomains });
+                    break;
+
+                case "/api/federation/verify-contract":
+                    string fedContract = "settlement-events-v2";
+                    string fedPartner = "spiffe://clearing-partner.eu";
+                    bool fedBreak = false;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("contractId", out var cProp))
+                                fedContract = cProp.GetString() ?? fedContract;
+                            if (doc.RootElement.TryGetProperty("partnerTrustDomain", out var pProp))
+                                fedPartner = pProp.GetString() ?? fedPartner;
+                            if (doc.RootElement.TryGetProperty("removeRequiredField", out var rProp) && (rProp.ValueKind == JsonValueKind.True || rProp.ValueKind == JsonValueKind.False))
+                                fedBreak = rProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var fedVerify = FederationCatalogEngine.Instance.VerifyBoundaryContract(fedContract, fedPartner, fedBreak);
+                    await WriteJsonResponseAsync(res, fedVerify);
+                    break;
+
+                case "/api/federation/catalog":
+                    string fedSys = "kite-enterprise-platform";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("systemName", out var sProp))
+                                fedSys = sProp.GetString() ?? fedSys;
+                        }
+                        catch { }
+                    }
+                    var fedCatalog = FederationCatalogEngine.Instance.GenerateFederationCatalog(fedSys);
+                    await WriteJsonResponseAsync(res, fedCatalog);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();

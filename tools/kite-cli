@@ -9472,6 +9472,63 @@ def cmd_remediate(args: argparse.Namespace) -> None:
                 print(f"  * {p.get('id'):<22} Signal={p.get('triggerSignal'):<24} Action={p.get('actionType')} (MaxBlast={p.get('maxBlastRadiusServices')})")
 
 
+def cmd_federation(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "trust-domains") or "trust-domains"
+
+    if action == "verify-contract":
+        cid = getattr(args, "contract", "settlement-events-v2") or "settlement-events-v2"
+        partner = getattr(args, "partner", "spiffe://clearing-partner.eu") or "spiffe://clearing-partner.eu"
+        rem = bool(getattr(args, "breaking", False))
+        res = api_post_safe(ep, "/api/federation/verify-contract", {
+            "contractId": cid,
+            "partnerTrustDomain": partner,
+            "removeRequiredField": rem
+        }, {
+            "contractId": cid,
+            "partnerTrustDomain": partner,
+            "backwardCompatible": not rem,
+            "breakingChanges": [f"BREAKING: Removed required property 'idempotencyKey' in {cid}."] if rem else []
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            st = "COMPATIBLE" if res.get("backwardCompatible") else "BREAKING"
+            print(f"=== Federated B2B Contract Verification [{cid}] -> {st} ===")
+            for bc in res.get("breakingChanges", []):
+                print(f"  ! {bc}")
+
+    elif action == "catalog":
+        sys_name = getattr(args, "system", "kite-enterprise-platform") or "kite-enterprise-platform"
+        res = api_post_safe(ep, "/api/federation/catalog", {"systemName": sys_name}, {
+            "systemName": sys_name,
+            "federatedDomainsCount": 3,
+            "catalogInfoYaml": f"apiVersion: backstage.io/v1alpha1\nkind: System\nmetadata:\n  name: {sys_name}",
+            "spireFederationYaml": "apiVersion: spire.spiffe.io/v1alpha1\nkind: ClusterFederatedTrustDomain"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("catalogInfoYaml", ""))
+            print("---")
+            print(res.get("spireFederationYaml", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/federation/trust-domains", {
+            "trustDomains": [
+                {"spiffeTrustDomain": "spiffe://kite.internal", "svidRotationMinutes": 60, "mtlsVerified": True},
+                {"spiffeTrustDomain": "spiffe://clearing-partner.eu", "svidRotationMinutes": 30, "mtlsVerified": True},
+                {"spiffeTrustDomain": "spiffe://custody-vault.ch", "svidRotationMinutes": 15, "mtlsVerified": True}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Cross-Organization SPIFFE/SPIRE Federated Trust Domains ===")
+            for d in res.get("trustDomains", []):
+                print(f"  * {d.get('spiffeTrustDomain'):<32} SVID-Rot={d.get('svidRotationMinutes')}m | mTLS={d.get('mtlsVerified')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10791,6 +10848,28 @@ def run_mcp_server() -> None:
                                 "name": "kite_remediate_rollout_spec",
                                 "description": "Synthesize Argo Rollouts canary delivery and AnalysisTemplate manifests.",
                                 "inputSchema": {"type": "object", "properties": {"serviceName": {"type": "string", "default": "ledger-writer"}}}
+                            },
+                            {
+                                "name": "kite_federation_domains",
+                                "description": "List cross-organization SPIFFE/SPIRE federated zero-trust domains.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_federation_verify_contract",
+                                "description": "Verify backward compatibility of B2B AsyncAPI/OpenAPI boundary contracts.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "contractId": {"type": "string", "default": "settlement-events-v2"},
+                                        "partnerTrustDomain": {"type": "string", "default": "spiffe://clearing-partner.eu"},
+                                        "removeRequiredField": {"type": "boolean", "default": False}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_federation_catalog",
+                                "description": "Synthesize Backstage System/API catalog-info.yaml and SPIRE federated trust bundle.",
+                                "inputSchema": {"type": "object", "properties": {"systemName": {"type": "string", "default": "kite-enterprise-platform"}}}
                             }
                         ]
                     }
@@ -12816,6 +12895,22 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/remediate/rollout-spec", {"serviceName": svc}, {"serviceName": svc, "canaryStepsCount": 4})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_federation_domains":
+                    res = api_get_safe(ep, "/api/federation/trust-domains", {"trustDomains": [{"spiffeTrustDomain": "spiffe://kite.internal", "mtlsVerified": True}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_federation_verify_contract":
+                    cid = args.get("contractId", "settlement-events-v2")
+                    partner = args.get("partnerTrustDomain", "spiffe://clearing-partner.eu")
+                    rem = args.get("removeRequiredField", False)
+                    res = api_post_safe(ep, "/api/federation/verify-contract", {"contractId": cid, "partnerTrustDomain": partner, "removeRequiredField": rem}, {"contractId": cid, "backwardCompatible": not rem})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_federation_catalog":
+                    sys_name = args.get("systemName", "kite-enterprise-platform")
+                    res = api_post_safe(ep, "/api/federation/catalog", {"systemName": sys_name}, {"systemName": sys_name, "federatedDomainsCount": 3})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13474,6 +13569,15 @@ def main() -> None:
     p_remediate.add_argument("--dry-run", action="store_true", help="Preview action without mutating traffic weights")
     p_remediate.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # federation
+    p_fed = subparsers.add_parser("federation", help="Cross-organization SPIFFE/SPIRE federation, B2B contract verifier, and Backstage catalog")
+    p_fed.add_argument("action", nargs="?", choices=["trust-domains", "verify-contract", "catalog"], default="trust-domains", help="Federation action")
+    p_fed.add_argument("--contract", default="settlement-events-v2", help="B2B boundary contract ID")
+    p_fed.add_argument("--partner", default="spiffe://clearing-partner.eu", help="Partner SPIFFE trust domain")
+    p_fed.add_argument("--breaking", action="store_true", help="Simulate breaking field removal")
+    p_fed.add_argument("--system", default="kite-enterprise-platform", help="Backstage System entity name")
+    p_fed.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13630,6 +13734,8 @@ def main() -> None:
         cmd_slo(args)
     elif args.subcommand == "remediate":
         cmd_remediate(args)
+    elif args.subcommand == "federation":
+        cmd_federation(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":
