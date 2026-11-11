@@ -9616,6 +9616,62 @@ def cmd_loadtest(args: argparse.Namespace) -> None:
                 print(f"  * {p.get('serviceId'):<18} {p.get('endpointPath'):<24} BaseRPS={p.get('baselineSingleWorkerRps')} | P99<={p.get('targetP99LatencyMs')}ms")
 
 
+def cmd_policy(args: argparse.Namespace) -> None:
+    ep = get_active_endpoint()
+    action = getattr(args, "action", "rules") or "rules"
+
+    if action == "evaluate":
+        role = getattr(args, "role", "treasury-operator") or "treasury-operator"
+        act = getattr(args, "op", "ledger:ApproveSettlement") or "ledger:ApproveSettlement"
+        res_type = getattr(args, "resource", "SettlementBatch") or "SettlementBatch"
+        mfa = not bool(getattr(args, "no_mfa", False))
+        res = api_post_safe(ep, "/api/policy/evaluate", {
+            "principalRole": role,
+            "action": act,
+            "resourceType": res_type,
+            "mfaVerified": mfa
+        }, {
+            "allowed": mfa and role == "treasury-operator",
+            "matchedRuleId": "pol-permit-treasury-settle" if mfa else "pol-forbid-unverified-mfa",
+            "denyOverridesTriggered": not mfa,
+            "reason": "Evaluated ABAC/ReBAC guardrails."
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            st = "ALLOW" if res.get("allowed") else "DENY"
+            print(f"=== Policy-as-Code Verdict: {st} [{res.get('matchedRuleId')}] ===")
+            print(f"  * {res.get('reason')}")
+
+    elif action == "bundle":
+        ns = getattr(args, "namespace", "kite.authz.v1") or "kite.authz.v1"
+        res = api_post_safe(ep, "/api/policy/bundle", {"namespace": ns}, {
+            "namespace": ns,
+            "opaRegoModule": f"package {ns}\nimport rego.v1\ndefault allow := false",
+            "cedarPolicySet": "forbid (principal, action, resource) unless { context.mfaVerified == true };"
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print(res.get("opaRegoModule", ""))
+            print("---")
+            print(res.get("cedarPolicySet", ""))
+
+    else:
+        res = api_get_safe(ep, "/api/policy/rules", {
+            "rules": [
+                {"id": "pol-forbid-unverified-mfa", "effect": "forbid", "principalRole": "*", "action": "ledger:ApproveSettlement"},
+                {"id": "pol-permit-treasury-settle", "effect": "permit", "principalRole": "treasury-operator", "action": "ledger:ApproveSettlement"}
+            ]
+        })
+        if getattr(args, "json", False):
+            print(json.dumps(res, indent=2))
+        else:
+            print("=== Policy-as-Code Guardrail Rules (OPA Rego & AWS Cedar) ===")
+            for r in res.get("rules", []):
+                print(f"  * [{r.get('effect', '').upper():<6}] {r.get('id'):<28} Role={r.get('principalRole'):<20} Action={r.get('action')}")
+
+
 def cmd_co_architect(args: argparse.Namespace) -> None:
     ep = get_active_endpoint()
     canvas = api_get(ep, "/api/canvas")
@@ -10990,6 +11046,29 @@ def run_mcp_server() -> None:
                                         "durationSec": {"type": "integer", "default": 120}
                                     }
                                 }
+                            },
+                            {
+                                "name": "kite_policy_rules",
+                                "description": "List ABAC/ReBAC fine-grained permit and forbid authorization rules.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            },
+                            {
+                                "name": "kite_policy_evaluate",
+                                "description": "Evaluate zero-trust authorization decision with forbid-overrides-permit semantics.",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "principalRole": {"type": "string", "default": "treasury-operator"},
+                                        "action": {"type": "string", "default": "ledger:ApproveSettlement"},
+                                        "resourceType": {"type": "string", "default": "SettlementBatch"},
+                                        "mfaVerified": {"type": "boolean", "default": True}
+                                    }
+                                }
+                            },
+                            {
+                                "name": "kite_policy_bundle",
+                                "description": "Synthesize Open Policy Agent (OPA Rego v1) module and AWS Cedar policy set.",
+                                "inputSchema": {"type": "object", "properties": {"namespace": {"type": "string", "default": "kite.authz.v1"}}}
                             }
                         ]
                     }
@@ -13067,6 +13146,23 @@ body {{ margin: 0; font-family: -apple-system, sans-serif; background: #0F1117; 
                     res = api_post_safe(ep, "/api/loadtest/scripts", {"serviceId": svc, "targetVus": vus, "durationSec": dur}, {"serviceId": svc, "targetVus": vus, "k6ScriptJs": "import http from 'k6/http';"})
                     send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
 
+                elif tool_name == "kite_policy_rules":
+                    res = api_get_safe(ep, "/api/policy/rules", {"rules": [{"id": "pol-forbid-unverified-mfa", "effect": "forbid"}]})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_policy_evaluate":
+                    role = args.get("principalRole", "treasury-operator")
+                    act = args.get("action", "ledger:ApproveSettlement")
+                    rt = args.get("resourceType", "SettlementBatch")
+                    mfa = args.get("mfaVerified", True)
+                    res = api_post_safe(ep, "/api/policy/evaluate", {"principalRole": role, "action": act, "resourceType": rt, "mfaVerified": mfa}, {"allowed": mfa and role == "treasury-operator", "denyOverridesTriggered": not mfa})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
+                elif tool_name == "kite_policy_bundle":
+                    ns = args.get("namespace", "kite.authz.v1")
+                    res = api_post_safe(ep, "/api/policy/bundle", {"namespace": ns}, {"namespace": ns, "opaRegoModule": f"package {ns}\nimport rego.v1"})
+                    send_response({"jsonrpc": "2.0", "id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}})
+
                 else:
                     send_response({
                         "jsonrpc": "2.0",
@@ -13747,6 +13843,16 @@ def main() -> None:
     p_lt.add_argument("--duration", type=int, default=120, help="Load test duration in seconds")
     p_lt.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
+    # policy
+    p_pol = subparsers.add_parser("policy", help="Policy-as-Code authorization evaluator and OPA Rego / AWS Cedar bundle synthesis")
+    p_pol.add_argument("action", nargs="?", choices=["rules", "evaluate", "bundle"], default="rules", help="Policy action")
+    p_pol.add_argument("--role", default="treasury-operator", help="Principal role")
+    p_pol.add_argument("--op", default="ledger:ApproveSettlement", help="Target action")
+    p_pol.add_argument("--resource", default="SettlementBatch", help="Resource type")
+    p_pol.add_argument("--no-mfa", action="store_true", help="Simulate missing MFA verification")
+    p_pol.add_argument("--namespace", default="kite.authz.v1", help="Rego package namespace")
+    p_pol.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     # mcp
     p_mcp = subparsers.add_parser("mcp", help="Run MCP server over stdio or manage AI client integrations")
     p_mcp.add_argument("action", nargs="?", choices=["run", "setup", "install", "status", "uninstall"], default="run", help="Action: run (default), setup/install, status, or uninstall")
@@ -13909,6 +14015,8 @@ def main() -> None:
         cmd_hyperscale(args)
     elif args.subcommand == "loadtest":
         cmd_loadtest(args)
+    elif args.subcommand == "policy":
+        cmd_policy(args)
     elif args.subcommand == "mcp":
         action = getattr(args, "action", "run")
         if action == "run":

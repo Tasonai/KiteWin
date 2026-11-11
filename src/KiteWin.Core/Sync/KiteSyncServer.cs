@@ -1458,6 +1458,56 @@ public sealed class KiteSyncServer : IDisposable
                     await WriteJsonResponseAsync(res, ltBundle);
                     break;
 
+                case "/api/policy/rules":
+                    var polRules = PolicyAsCodeEngine.Instance.GetRules();
+                    await WriteJsonResponseAsync(res, new { rules = polRules });
+                    break;
+
+                case "/api/policy/evaluate":
+                    string polRole = "treasury-operator";
+                    string polAct = "ledger:ApproveSettlement";
+                    string polRes = "SettlementBatch";
+                    bool polMfa = true;
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("principalRole", out var rProp))
+                                polRole = rProp.GetString() ?? polRole;
+                            if (doc.RootElement.TryGetProperty("action", out var aProp))
+                                polAct = aProp.GetString() ?? polAct;
+                            if (doc.RootElement.TryGetProperty("resourceType", out var rtProp))
+                                polRes = rtProp.GetString() ?? polRes;
+                            if (doc.RootElement.TryGetProperty("mfaVerified", out var mProp) && (mProp.ValueKind == JsonValueKind.True || mProp.ValueKind == JsonValueKind.False))
+                                polMfa = mProp.GetBoolean();
+                        }
+                        catch { }
+                    }
+                    var polVerdict = PolicyAsCodeEngine.Instance.EvaluateAccess(polRole, polAct, polRes, polMfa);
+                    await WriteJsonResponseAsync(res, polVerdict);
+                    break;
+
+                case "/api/policy/bundle":
+                    string polNs = "kite.authz.v1";
+                    if (req.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8);
+                        var json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.TryGetProperty("namespace", out var nProp))
+                                polNs = nProp.GetString() ?? polNs;
+                        }
+                        catch { }
+                    }
+                    var polBundle = PolicyAsCodeEngine.Instance.SynthesizePolicyBundle(polNs);
+                    await WriteJsonResponseAsync(res, polBundle);
+                    break;
+
                 default:
                     res.StatusCode = (int)HttpStatusCode.NotFound;
                     res.Close();
